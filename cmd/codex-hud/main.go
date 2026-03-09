@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ds/codex-hud/internal/config"
+	"github.com/ds/codex-hud/internal/launcher"
 	"github.com/ds/codex-hud/internal/tui"
 	"github.com/ds/codex-hud/internal/watcher"
 	"github.com/spf13/cobra"
@@ -19,7 +20,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "codex-hud",
 		Short: "Real-time HUD for OpenAI Codex CLI",
-		RunE:  runWatch,
+		RunE:  run,
 	}
 
 	rootCmd.Flags().String("file", "", "Path to a specific .jsonl session file")
@@ -30,6 +31,26 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// run dispatches to watch mode or wrapper mode based on the --watch flag.
+func run(cmd *cobra.Command, args []string) error {
+	watch, _ := cmd.Flags().GetBool("watch")
+	if watch {
+		return runWatch(cmd, args)
+	}
+	return runWrapper(cmd, args)
+}
+
+// runWrapper launches codex in the current terminal and the HUD in a split pane
+// or new window, depending on the detected terminal environment.
+func runWrapper(cmd *cobra.Command, args []string) error {
+	split, _ := cmd.Flags().GetString("split")
+	self, err := os.Executable()
+	if err != nil {
+		self = "codex-hud"
+	}
+	return launcher.Launch(args, split, self)
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {
