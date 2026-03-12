@@ -126,15 +126,21 @@ func processLine(s *state.Session, line string) {
 		}
 
 	case "response_item":
-		// Peek at the subtype to determine how to handle the response item.
+		// Peek at the inner type/subtype field to determine how to handle the
+		// response item. Newer Codex CLI uses "type", older uses "subtype".
 		var env struct {
+			Type    string `json:"type"`
 			Subtype string `json:"subtype"`
 		}
 		if err := json.Unmarshal(ev.Payload, &env); err != nil {
 			return
 		}
+		itemType := env.Subtype
+		if itemType == "" {
+			itemType = env.Type
+		}
 
-		switch env.Subtype {
+		switch itemType {
 		case "function_call":
 			fc, err := ev.AsFunctionCall()
 			if err != nil {

@@ -18,14 +18,18 @@ type Event struct {
 // Subtype extraction
 // ---------------------------------------------------------------------------
 
-// subtypeEnvelope is used internally to peek at the "subtype" field of a
-// payload without fully deserializing it.
+// subtypeEnvelope is used internally to peek at the inner type/subtype field
+// of a payload without fully deserializing it. Older Codex CLI formats used
+// "subtype" while newer versions use "type" inside the payload.
 type subtypeEnvelope struct {
+	Type    string `json:"type"`
 	Subtype string `json:"subtype"`
 }
 
-// EventMsgType returns the subtype of an event_msg event. It returns an error
-// if the event is not of type "event_msg" or the payload cannot be decoded.
+// EventMsgType returns the subtype of an event_msg event. It checks both the
+// "subtype" and "type" fields of the payload for compatibility across Codex
+// CLI versions. It returns an error if the event is not of type "event_msg"
+// or the payload cannot be decoded.
 func (e *Event) EventMsgType() (string, error) {
 	if e.Type != "event_msg" {
 		return "", fmt.Errorf("EventMsgType called on event of type %q, want \"event_msg\"", e.Type)
@@ -34,7 +38,10 @@ func (e *Event) EventMsgType() (string, error) {
 	if err := json.Unmarshal(e.Payload, &env); err != nil {
 		return "", fmt.Errorf("decoding event_msg subtype: %w", err)
 	}
-	return env.Subtype, nil
+	if env.Subtype != "" {
+		return env.Subtype, nil
+	}
+	return env.Type, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -107,12 +114,13 @@ func (e *Event) AsTurnContext() (*TurnContext, error) {
 // TokenCount (event_msg with subtype "token_count")
 // ---------------------------------------------------------------------------
 
-// TokenCount represents the payload of an event_msg with subtype
-// "token_count".
+// TokenCount represents the payload of an event_msg with subtype/type
+// "token_count". Both field names are supported for compatibility.
 type TokenCount struct {
-	Subtype    string      `json:"subtype"`
-	Info       TokenInfo   `json:"info"`
-	RateLimits *RateLimits `json:"rate_limits,omitempty"`
+	Subtype       string      `json:"subtype"`
+	SubtypeAlt    string      `json:"type"`
+	Info          TokenInfo   `json:"info"`
+	RateLimits    *RateLimits `json:"rate_limits,omitempty"`
 }
 
 // TokenInfo holds aggregated and per-turn token usage.
@@ -158,13 +166,14 @@ func (e *Event) AsTokenCount() (*TokenCount, error) {
 // FunctionCall (response_item with subtype "function_call")
 // ---------------------------------------------------------------------------
 
-// FunctionCall represents the payload of a response_item with subtype
-// "function_call".
+// FunctionCall represents the payload of a response_item with subtype/type
+// "function_call". Both field names are supported for compatibility.
 type FunctionCall struct {
-	Subtype   string `json:"subtype"`
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-	CallID    string `json:"call_id"`
+	Subtype    string `json:"subtype"`
+	SubtypeAlt string `json:"type"`
+	Name       string `json:"name"`
+	Arguments  string `json:"arguments"`
+	CallID     string `json:"call_id"`
 }
 
 // AsFunctionCall deserializes the payload as a FunctionCall.

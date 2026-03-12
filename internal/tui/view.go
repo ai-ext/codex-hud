@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -13,8 +15,10 @@ func (m Model) View() string {
 		return OuterStyle.Width(m.Width - 4).Render(msg)
 	}
 
-	// Compute available inner width (outer border + padding: 2 border + 4 padding = 6)
-	innerWidth := m.Width - 6
+	// Compute available inner width.
+	// OuterStyle uses Width(m.Width-4) which includes padding but not border.
+	// Horizontal padding is 2*2=4, so content area = (m.Width-4) - 4 = m.Width-8.
+	innerWidth := m.Width - 8
 	if innerWidth < 20 {
 		innerWidth = 20
 	}
@@ -30,8 +34,26 @@ func (m Model) View() string {
 	// Tokens and Session side-by-side if wide enough
 	if m.Width >= 80 {
 		halfWidth := innerWidth / 2
+
+		// First pass: render both to measure content lines.
 		tokensCard := RenderTokens(m.State, halfWidth)
 		sessionCard := RenderSession(m.State, m.GitStatus, halfWidth)
+
+		tLines := strings.Count(tokensCard, "\n") + 1
+		sLines := strings.Count(sessionCard, "\n") + 1
+
+		// Second pass: re-render with equalized content height.
+		// The card has 2 border lines (top + bottom), so inner content
+		// lines = total lines - 2. We want both to have the same total.
+		maxLines := tLines
+		if sLines > maxLines {
+			maxLines = sLines
+		}
+		// inner content lines = maxLines - 2 (border top/bottom)
+		minContent := maxLines - 2
+		tokensCard = RenderTokens(m.State, halfWidth, minContent)
+		sessionCard = RenderSession(m.State, m.GitStatus, halfWidth, minContent)
+
 		row := lipgloss.JoinHorizontal(lipgloss.Top, tokensCard, sessionCard)
 		sections = append(sections, row)
 	} else {

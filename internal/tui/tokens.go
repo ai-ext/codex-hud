@@ -8,8 +8,9 @@ import (
 )
 
 // RenderTokens renders the token usage card showing input, cached, output,
-// and reasoning token counts.
-func RenderTokens(s *state.Session, width int) string {
+// and reasoning token counts. If minContentLines > 0, blank lines are appended
+// to the content so the card's interior reaches at least that many lines.
+func RenderTokens(s *state.Session, width int, minContentLines ...int) string {
 	title := TitleStyle.Render("Tokens")
 
 	rows := []string{
@@ -19,9 +20,14 @@ func RenderTokens(s *state.Session, width int) string {
 		tokenRow("◆", "reason", s.TotalReasonTokens),
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		append([]string{title}, rows...)...,
-	)
+	all := append([]string{title}, rows...)
+	if len(minContentLines) > 0 && minContentLines[0] > len(all) {
+		for len(all) < minContentLines[0] {
+			all = append(all, "")
+		}
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, all...)
 
 	return CardStyle.Width(width - 2).Render(content)
 }

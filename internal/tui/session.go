@@ -12,8 +12,9 @@ import (
 )
 
 // RenderSession renders the session info card showing duration, turns, CWD,
-// and git status.
-func RenderSession(s *state.Session, gitStatus *git.Status, width int) string {
+// and git status. If minContentLines > 0, blank lines are appended to the
+// content so the card's interior reaches at least that many lines.
+func RenderSession(s *state.Session, gitStatus *git.Status, width int, minContentLines ...int) string {
 	title := TitleStyle.Render("Session")
 
 	var rows []string
@@ -56,9 +57,14 @@ func RenderSession(s *state.Session, gitStatus *git.Status, width int) string {
 		}
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		append([]string{title}, rows...)...,
-	)
+	all := append([]string{title}, rows...)
+	if len(minContentLines) > 0 && minContentLines[0] > len(all) {
+		for len(all) < minContentLines[0] {
+			all = append(all, "")
+		}
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, all...)
 
 	return CardStyle.Width(width - 2).Render(content)
 }
