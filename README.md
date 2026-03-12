@@ -44,47 +44,54 @@ Real-time monitoring HUD for [OpenAI Codex CLI](https://github.com/openai/codex)
 
 ## Install
 
-### macOS (Homebrew)
+### Pre-built binaries (Go 불필요)
 
+[GitHub Releases](https://github.com/ai-ext/codex-hud/releases)에서 OS에 맞는 바이너리를 다운로드:
+
+**macOS / Linux:**
 ```bash
-# Build
-git clone https://github.com/ds/codex-hud.git
-cd codex-hud
-make build
+# macOS (Apple Silicon)
+curl -L -o codex-hud https://github.com/ai-ext/codex-hud/releases/latest/download/codex-hud-darwin-arm64
+# macOS (Intel)
+curl -L -o codex-hud https://github.com/ai-ext/codex-hud/releases/latest/download/codex-hud-darwin-amd64
+# Linux
+curl -L -o codex-hud https://github.com/ai-ext/codex-hud/releases/latest/download/codex-hud-linux-amd64
 
-# Install to PATH
-make install
+chmod +x codex-hud
+sudo mv codex-hud /usr/local/bin/
 ```
 
-### Linux
+**Windows:**
+1. [codex-hud-windows-amd64.exe](https://github.com/ai-ext/codex-hud/releases/latest/download/codex-hud-windows-amd64.exe) 다운로드
+2. `scripts/install.bat` 또는 `install.ps1`과 같은 폴더에 넣고 실행:
+```powershell
+# PowerShell
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+
+# 또는 CMD
+scripts\install.bat
+```
+이 스크립트가 자동으로 `%LOCALAPPDATA%\codex-hud\`에 복사하고 PATH에 추가합니다.
+
+### Build from source (Go 1.21+ 필요)
 
 ```bash
-git clone https://github.com/ds/codex-hud.git
+git clone https://github.com/ai-ext/codex-hud.git
 cd codex-hud
+
+# macOS
+make build && make install
+
+# Linux
 go build -o dist/codex-hud ./cmd/codex-hud
 sudo cp dist/codex-hud /usr/local/bin/
-```
 
-### Windows
-
-```powershell
-git clone https://github.com/ds/codex-hud.git
-cd codex-hud
+# Windows (PowerShell)
 go build -o codex-hud.exe ./cmd/codex-hud
-
-# Auto-install (adds to PATH)
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
-```
 
-### Pre-built binaries
-
-```bash
+# Cross-platform build (all 4 binaries)
 make build-all
-# Creates:
-#   dist/codex-hud-darwin-amd64
-#   dist/codex-hud-darwin-arm64
-#   dist/codex-hud-linux-amd64
-#   dist/codex-hud-windows-amd64.exe
 ```
 
 ## Usage
