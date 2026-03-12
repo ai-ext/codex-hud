@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ds/codex-hud/internal/parser"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -60,6 +61,28 @@ func FindLatestSession(sessionsDir string) (string, error) {
 	return entries[0].path, nil
 }
 
+// ReadExistingLines reads all current lines from a file and returns them as a
+// slice. This is used to pre-populate state before starting the TUI, avoiding
+// the "jumpy" startup where lines are processed one by one.
+func ReadExistingLines(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimRight(scanner.Text(), "\n\r")
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines, scanner.Err()
+}
+
 // TailFile opens the file at path, reads all existing lines and sends each
 // non-empty line to the lines channel. It then watches for new appends via
 // fsnotify and sends new lines as they appear. TailFile blocks until the stop
@@ -78,6 +101,31 @@ func TailFile(path string, lines chan<- string, stop <-chan struct{}) error {
 		return err
 	}
 
+	return tailFromReader(f, reader, path, lines, stop)
+}
+
+// TailFileFromEnd is like TailFile but seeks to the end of the file first,
+// only capturing newly appended lines. Use this when existing content has
+// already been pre-loaded via ReadExistingLines to avoid duplicate processing.
+func TailFileFromEnd(path string, lines chan<- string, stop <-chan struct{}) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	// Seek to end — only new appends will be read.
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		return fmt.Errorf("seek %s: %w", path, err)
+	}
+
+	reader := bufio.NewReader(f)
+	return tailFromReader(f, reader, path, lines, stop)
+}
+
+// tailFromReader watches the file for new appends and sends new lines through
+// the channel. Shared implementation for TailFile and TailFileFromEnd.
+func tailFromReader(f *os.File, reader *bufio.Reader, path string, lines chan<- string, stop <-chan struct{}) error {
 	// Set up fsnotify watcher for new appends.
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -130,6 +178,85 @@ func readLines(reader *bufio.Reader, lines chan<- string) error {
 			lines <- line
 		}
 	}
+}
+
+// FindLatestRateLimits scans the most recent session files (up to maxFiles)
+// looking for the last non-null rate_limits in token_count events. Returns nil
+// if no rate limits are found.
+func FindLatestRateLimits(sessionsDir string, maxFiles int) *parser.RateLimits {
+	type fileEntry struct {
+		path    string
+		modTime int64
+	}
+
+	var entries []fileEntry
+	_ = filepath.WalkDir(sessionsDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(d.Name(), ".jsonl") {
+			info, err := d.Info()
+			if err != nil {
+				return nil
+			}
+			entries = append(entries, fileEntry{path: path, modTime: info.ModTime().UnixNano()})
+		}
+		return nil
+	})
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].modTime > entries[j].modTime
+	})
+
+	for i, e := range entries {
+		if i >= maxFiles {
+			break
+		}
+		if rl := scanFileForRateLimits(e.path); rl != nil {
+			return rl
+		}
+	}
+	return nil
+}
+
+// scanFileForRateLimits reads a JSONL file backwards (last lines first via
+// buffer) and returns the most recent non-null rate_limits.
+func scanFileForRateLimits(path string) *parser.RateLimits {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	// Read all lines, check from the end for the most recent rate_limits.
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	// Scan from newest to oldest.
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		if !strings.Contains(line, "rate_limits") || strings.Contains(line, `"rate_limits":null`) {
+			continue
+		}
+		evt, err := parser.ParseLine(line)
+		if err != nil || evt.Type != "event_msg" {
+			continue
+		}
+		subtype, err := evt.EventMsgType()
+		if err != nil || subtype != "token_count" {
+			continue
+		}
+		tc, err := evt.AsTokenCount()
+		if err != nil || tc.RateLimits == nil {
+			continue
+		}
+		return tc.RateLimits
+	}
+	return nil
 }
 
 // WatchForNewSession watches sessionsDir recursively via fsnotify. When a new

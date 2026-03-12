@@ -15,6 +15,8 @@ import (
 	"github.com/ds/codex-hud/internal/parser"
 	"github.com/ds/codex-hud/internal/state"
 	"github.com/ds/codex-hud/internal/tui"
+	"github.com/ds/codex-hud/internal/usage"
+	"github.com/ds/codex-hud/internal/watcher"
 )
 
 // findBestSession walks sessionsDir and returns the most recently modified
@@ -80,10 +82,21 @@ func main() {
 	home, _ := os.UserHomeDir()
 	sessionsDir := filepath.Join(home, ".codex", "sessions")
 
-	sessionFile, err := findBestSession(sessionsDir, 10*1024) // 10KB minimum
-	if err != nil {
-		fmt.Println("No session files found:", err)
-		return
+	// Accept --file=<path> or positional arg for specific session file.
+	var sessionFile string
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "--file=") {
+			sessionFile = strings.TrimPrefix(arg, "--file=")
+			break
+		}
+	}
+	if sessionFile == "" {
+		var err error
+		sessionFile, err = findBestSession(sessionsDir, 10*1024) // 10KB minimum
+		if err != nil {
+			fmt.Println("No session files found:", err)
+			return
+		}
 	}
 	fmt.Fprintf(os.Stderr, "Using session: %s\n", sessionFile)
 
@@ -147,6 +160,33 @@ func main() {
 					s.CompleteFunctionCall(output.CallID)
 				}
 			}
+		}
+	}
+
+	// Fetch live rate limits from the WHAM API (same as Codex /status).
+	// Falls back to scanning recent session files if the API is unavailable.
+	if resp, err := usage.Fetch(); err == nil && resp.RateLimit != nil {
+		rl := resp.RateLimit
+		s.HasRateLimits = true
+		if rl.Primary != nil {
+			s.PrimaryRatePercent = float64(rl.Primary.UsedPercent)
+			s.PrimaryResetsAt = int64(rl.Primary.ResetAt)
+			s.PrimaryWindowMinutes = rl.Primary.LimitWindowSecs / 60
+		}
+		if rl.Secondary != nil {
+			s.SecondaryRatePercent = float64(rl.Secondary.UsedPercent)
+			s.SecondaryResetsAt = int64(rl.Secondary.ResetAt)
+			s.SecondaryWindowMinutes = rl.Secondary.LimitWindowSecs / 60
+		}
+	} else if !s.HasRateLimits {
+		if rl := watcher.FindLatestRateLimits(sessionsDir, 10); rl != nil {
+			s.HasRateLimits = true
+			s.PrimaryRatePercent = rl.Primary.UsedPercent
+			s.PrimaryResetsAt = rl.Primary.ResetsAt
+			s.PrimaryWindowMinutes = rl.Primary.WindowMinutes
+			s.SecondaryRatePercent = rl.Secondary.UsedPercent
+			s.SecondaryResetsAt = rl.Secondary.ResetsAt
+			s.SecondaryWindowMinutes = rl.Secondary.WindowMinutes
 		}
 	}
 

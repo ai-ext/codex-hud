@@ -146,9 +146,9 @@ func TestStateWithRealSession(t *testing.T) {
 		t.Logf("Context: %d / %d (%.1f%%)",
 			sess.ContextUsedTokens, sess.ContextWindowSize, pct)
 
-		// Note: ContextPercent can exceed 100% because TotalTokens in
-		// TotalTokenUsage is cumulative across the entire session, not
-		// just the current context window fill. This is expected.
+		// ContextPercent should usually track the latest turn usage against the
+		// model context window. Older or partial events may still fall back to
+		// total tokens when last-turn usage is unavailable.
 		if pct < 0 {
 			t.Errorf("ContextPercent = %.2f, expected non-negative", pct)
 		}

@@ -6,70 +6,32 @@ import (
 	"os/exec"
 )
 
-// launchFallback opens a new terminal window for the HUD when neither tmux nor
-// Windows Terminal is detected. It uses OS-specific mechanisms.
+// launchFallback is the last resort when no split-capable environment is found
+// and tmux is not installed. It prints guidance and starts the HUD in watch
+// mode so the user at least sees something useful.
 func launchFallback(codexArgs []string, hudBinary string, goos string) error {
-	hudCmd := hudWatchCommand(hudBinary)
-
-	var err error
+	fmt.Println("┌─────────────────────────────────────────────────────┐")
+	fmt.Println("│  codex-hud: split-pane environment not detected     │")
+	fmt.Println("│                                                     │")
+	fmt.Println("│  Install tmux for the best experience:              │")
 	switch goos {
 	case "darwin":
-		err = launchDarwin(hudCmd)
+		fmt.Println("│    brew install tmux                                │")
 	case "linux":
-		err = launchLinux(hudCmd)
-	case "windows":
-		err = launchWindows(hudCmd)
+		fmt.Println("│    sudo apt install tmux                            │")
 	default:
-		return fmt.Errorf("unsupported OS for fallback launcher: %s", goos)
+		fmt.Println("│    (install tmux for your platform)                 │")
 	}
-	if err != nil {
-		return fmt.Errorf("failed to open HUD window: %w", err)
-	}
+	fmt.Println("│                                                     │")
+	fmt.Println("│  Starting HUD in watch mode...                      │")
+	fmt.Println("│  Run 'codex' in another terminal tab to see stats.  │")
+	fmt.Println("└─────────────────────────────────────────────────────┘")
+	fmt.Println()
 
-	// Run codex in the current terminal.
-	codexBin, codexCmdArgs := buildCodexCommand(codexArgs)
-	c := exec.Command(codexBin, codexCmdArgs...)
-	c.Stdin = os.Stdin
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	if err := c.Run(); err != nil {
-		return fmt.Errorf("codex exited with error: %w", err)
-	}
-	return nil
-}
-
-// launchDarwin opens macOS Terminal.app with the HUD command.
-func launchDarwin(hudCmd string) error {
-	script := fmt.Sprintf(`tell application "Terminal" to do script "%s"`, hudCmd)
-	return exec.Command("osascript", "-e", script).Run()
-}
-
-// launchLinux tries common terminal emulators in order of preference.
-func launchLinux(hudCmd string) error {
-	terminals := []struct {
-		bin  string
-		args []string
-	}{
-		{"x-terminal-emulator", []string{"-e", hudCmd}},
-		{"gnome-terminal", []string{"--", "sh", "-c", hudCmd}},
-		{"xterm", []string{"-e", hudCmd}},
-	}
-
-	for _, t := range terminals {
-		path, err := exec.LookPath(t.bin)
-		if err != nil {
-			continue
-		}
-		cmd := exec.Command(path, t.args...)
-		if err := cmd.Start(); err != nil {
-			continue
-		}
-		return nil
-	}
-	return fmt.Errorf("no suitable terminal emulator found (tried x-terminal-emulator, gnome-terminal, xterm)")
-}
-
-// launchWindows opens a new cmd.exe window with the HUD command.
-func launchWindows(hudCmd string) error {
-	return exec.Command("cmd", "/c", "start", "cmd", "/k", hudCmd).Run()
+	// Fall back to running the HUD in watch mode in the current terminal.
+	cmd := exec.Command(hudBinary, "--watch")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }

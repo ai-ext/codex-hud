@@ -5,6 +5,7 @@ package launcher
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 )
 
@@ -56,6 +57,10 @@ func Launch(codexArgs []string, split string, hudBinary string) error {
 	case EnvWindowsTerminal:
 		return launchWT(codexArgs, split, hudBinary)
 	default:
+		// If tmux is available, start a new tmux session with split panes.
+		if tmuxPath, err := exec.LookPath("tmux"); err == nil {
+			return launchNewTmuxSession(codexArgs, split, hudBinary, tmuxPath)
+		}
 		return launchFallback(codexArgs, hudBinary, runtime.GOOS)
 	}
 }
@@ -69,6 +74,8 @@ func buildCodexCommand(codexArgs []string) (string, []string) {
 }
 
 // hudWatchCommand returns the full command string to run the HUD in watch mode.
+// The --fresh flag tells the HUD to skip pre-loading old session data since
+// the wrapper is about to start a new codex session.
 func hudWatchCommand(hudBinary string) string {
-	return fmt.Sprintf("%s --watch", hudBinary)
+	return fmt.Sprintf("%s --watch --fresh", hudBinary)
 }

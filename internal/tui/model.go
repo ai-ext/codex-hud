@@ -9,6 +9,7 @@ import (
 	"github.com/ds/codex-hud/internal/git"
 	"github.com/ds/codex-hud/internal/parser"
 	"github.com/ds/codex-hud/internal/state"
+	"github.com/ds/codex-hud/internal/usage"
 )
 
 // Model is the top-level bubbletea model for the codex-hud TUI.
@@ -34,6 +35,11 @@ type GitStatusMsg struct {
 	Status *git.Status
 }
 
+// UsageMsg is sent when a WHAM /usage API fetch completes.
+type UsageMsg struct {
+	Response *usage.Response
+}
+
 // NewModel creates a new Model with default state and the given config and
 // line channel.
 func NewModel(cfg *config.Config, lines <-chan string) Model {
@@ -47,9 +53,10 @@ func NewModel(cfg *config.Config, lines <-chan string) Model {
 	}
 }
 
-// Init returns the initial commands: wait for a line and start the tick loop.
+// Init returns the initial commands: wait for a line, start the tick loop,
+// and fetch live usage data.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(waitForLine(m.Lines), tickCmd())
+	return tea.Batch(waitForLine(m.Lines), tickCmd(), fetchUsage())
 }
 
 // waitForLine returns a Cmd that blocks until a line arrives on the channel,
@@ -86,8 +93,21 @@ func fetchGitStatus(cwd string) tea.Cmd {
 	}
 }
 
-// processLine parses a JSONL line and applies it to the session state.
-func processLine(s *state.Session, line string) {
+// fetchUsage returns a Cmd that calls the WHAM /usage API and sends the result
+// as a UsageMsg.
+func fetchUsage() tea.Cmd {
+	return func() tea.Msg {
+		resp, err := usage.Fetch()
+		if err != nil {
+			return UsageMsg{}
+		}
+		return UsageMsg{Response: resp}
+	}
+}
+
+// ProcessLine parses a JSONL line and applies it to the session state.
+// Exported so callers can pre-populate state before starting the TUI.
+func ProcessLine(s *state.Session, line string) {
 	ev, err := parser.ParseLine(line)
 	if err != nil {
 		return

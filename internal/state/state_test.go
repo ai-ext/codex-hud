@@ -118,6 +118,9 @@ func TestApplyTokenCount(t *testing.T) {
 				ReasoningOutputTokens: 200,
 				TotalTokens:           6000,
 			},
+			LastTokenUsage: parser.TokenUsage{
+				TotalTokens: 1200,
+			},
 			ModelContextWindow: 128000,
 		},
 	}
@@ -138,16 +141,16 @@ func TestApplyTokenCount(t *testing.T) {
 	if s.ContextWindowSize != 128000 {
 		t.Errorf("ContextWindowSize = %d, want 128000", s.ContextWindowSize)
 	}
-	if s.ContextUsedTokens != 6000 {
-		t.Errorf("ContextUsedTokens = %d, want 6000", s.ContextUsedTokens)
+	if s.ContextUsedTokens != 1200 {
+		t.Errorf("ContextUsedTokens = %d, want 1200", s.ContextUsedTokens)
 	}
 	if s.HasRateLimits {
 		t.Error("HasRateLimits = true, want false when no rate limits")
 	}
 
-	// ContextPercent: 6000/128000 * 100 ~= 4.6875
+	// ContextPercent: 1200/128000 * 100 ~= 0.9375
 	pct := s.ContextPercent()
-	expected := float64(6000) / float64(128000) * 100.0
+	expected := float64(1200) / float64(128000) * 100.0
 	if math.Abs(pct-expected) > 0.01 {
 		t.Errorf("ContextPercent() = %.4f, want ~%.4f", pct, expected)
 	}
@@ -163,6 +166,9 @@ func TestApplyTokenCountWithRateLimits(t *testing.T) {
 				OutputTokens:          5000,
 				ReasoningOutputTokens: 1000,
 				TotalTokens:           40000,
+			},
+			LastTokenUsage: parser.TokenUsage{
+				TotalTokens: 6400,
 			},
 			ModelContextWindow: 128000,
 		},
@@ -181,27 +187,14 @@ func TestApplyTokenCountWithRateLimits(t *testing.T) {
 	}
 	s.ApplyTokenCount(tc)
 
-	if !s.HasRateLimits {
-		t.Error("HasRateLimits = false, want true")
-	}
-	if s.PrimaryRatePercent != 42.5 {
-		t.Errorf("PrimaryRatePercent = %f, want 42.5", s.PrimaryRatePercent)
-	}
-	if s.PrimaryResetsAt != 1717322460 {
-		t.Errorf("PrimaryResetsAt = %d, want 1717322460", s.PrimaryResetsAt)
-	}
-	if s.SecondaryRatePercent != 10.0 {
-		t.Errorf("SecondaryRatePercent = %f, want 10.0", s.SecondaryRatePercent)
-	}
-	if s.SecondaryResetsAt != 1717325400 {
-		t.Errorf("SecondaryResetsAt = %d, want 1717325400", s.SecondaryResetsAt)
+	// Rate limits are no longer set from session data (WHAM API only).
+	if s.HasRateLimits {
+		t.Error("HasRateLimits = true, want false (rate limits come from WHAM API only)")
 	}
 
-	// ContextPercent: 40000/128000 * 100 ~= 31.25 -- not ~27% but the test below
-	// uses exact values. The spec says ~27% which we can achieve with different
-	// token values. Let's just verify the math is correct.
+	// ContextPercent: 6400/128000 * 100 = 5.0
 	pct := s.ContextPercent()
-	expected := float64(40000) / float64(128000) * 100.0
+	expected := float64(6400) / float64(128000) * 100.0
 	if math.Abs(pct-expected) > 0.01 {
 		t.Errorf("ContextPercent() = %.4f, want ~%.4f", pct, expected)
 	}
@@ -216,6 +209,9 @@ func TestContextPercentApprox27(t *testing.T) {
 	tc := &parser.TokenCount{
 		Info: parser.TokenInfo{
 			TotalTokenUsage: parser.TokenUsage{
+				TotalTokens: 999999,
+			},
+			LastTokenUsage: parser.TokenUsage{
 				TotalTokens: 34560,
 			},
 			ModelContextWindow: 128000,
@@ -226,6 +222,76 @@ func TestContextPercentApprox27(t *testing.T) {
 	// 34560 / 128000 * 100 = 27.0
 	if math.Abs(pct-27.0) > 0.1 {
 		t.Errorf("ContextPercent() = %.4f, want ~27.0", pct)
+	}
+}
+
+func TestSessionReset(t *testing.T) {
+	s := New()
+
+	// Apply first session.
+	s.ApplySessionMeta(&parser.SessionMeta{
+		ID:         "sess_001",
+		CLIVersion: "0.1.0",
+		CWD:        "/old/dir",
+	})
+	s.ApplyTokenCount(&parser.TokenCount{
+		Info: parser.TokenInfo{
+			TotalTokenUsage: parser.TokenUsage{TotalTokens: 50000},
+			LastTokenUsage:  parser.TokenUsage{TotalTokens: 50000},
+			ModelContextWindow: 128000,
+		},
+	})
+	s.IncrementTurn()
+	s.IncrementTurn()
+
+	if s.TurnCount != 2 {
+		t.Fatalf("TurnCount = %d, want 2", s.TurnCount)
+	}
+
+	// Simulate WHAM API setting rate limits.
+	s.HasRateLimits = true
+	s.PrimaryRatePercent = 15.0
+
+	// Apply a different session → should reset per-session state.
+	s.ApplySessionMeta(&parser.SessionMeta{
+		ID:         "sess_002",
+		CLIVersion: "0.2.0",
+		CWD:        "/new/dir",
+	})
+
+	if s.SessionID != "sess_002" {
+		t.Errorf("SessionID = %q, want %q", s.SessionID, "sess_002")
+	}
+	if s.TurnCount != 0 {
+		t.Errorf("TurnCount = %d, want 0 after reset", s.TurnCount)
+	}
+	if s.ContextUsedTokens != 0 {
+		t.Errorf("ContextUsedTokens = %d, want 0 after reset", s.ContextUsedTokens)
+	}
+	// Rate limits should be preserved (WHAM API data is account-level).
+	if !s.HasRateLimits {
+		t.Error("HasRateLimits = false, want true (preserved across session reset)")
+	}
+	if s.PrimaryRatePercent != 15.0 {
+		t.Errorf("PrimaryRatePercent = %f, want 15.0 (preserved)", s.PrimaryRatePercent)
+	}
+}
+
+func TestApplyTokenCountFallsBackToTotalTokens(t *testing.T) {
+	s := New()
+	tc := &parser.TokenCount{
+		Info: parser.TokenInfo{
+			TotalTokenUsage: parser.TokenUsage{
+				TotalTokens: 9000,
+			},
+			ModelContextWindow: 128000,
+		},
+	}
+
+	s.ApplyTokenCount(tc)
+
+	if s.ContextUsedTokens != 9000 {
+		t.Errorf("ContextUsedTokens = %d, want 9000", s.ContextUsedTokens)
 	}
 }
 

@@ -45,11 +45,13 @@ type Session struct {
 	TotalReasonTokens int
 
 	// Rate limits
-	HasRateLimits        bool
-	PrimaryRatePercent   float64
-	PrimaryResetsAt      int64
-	SecondaryRatePercent float64
-	SecondaryResetsAt    int64
+	HasRateLimits           bool
+	PrimaryRatePercent      float64
+	PrimaryResetsAt         int64
+	PrimaryWindowMinutes    int
+	SecondaryRatePercent    float64
+	SecondaryResetsAt       int64
+	SecondaryWindowMinutes  int
 
 	// Turn tracking
 	TurnCount int
@@ -68,10 +70,34 @@ func New() *Session {
 }
 
 // ApplySessionMeta sets session-level metadata from a parsed SessionMeta
-// event.
+// event. If the session ID changes (i.e. a new Codex session started), all
+// session-specific state is reset while preserving account-level data such as
+// rate limits (which come from the WHAM API, not the session file).
 func (s *Session) ApplySessionMeta(m *parser.SessionMeta) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Detect session switch and reset per-session state.
+	// Rate limits (from WHAM API) are account-level and preserved.
+	if s.SessionID != "" && s.SessionID != m.ID {
+		s.CLIVersion = ""
+		s.CWD = ""
+		s.ModelProvider = ""
+		s.StartTime = time.Time{}
+		s.Model = ""
+		s.ReasoningEffort = ""
+		s.ApprovalPolicy = ""
+		s.SandboxType = ""
+		s.ContextWindowSize = 0
+		s.ContextUsedTokens = 0
+		s.TotalInputTokens = 0
+		s.TotalCachedTokens = 0
+		s.TotalOutputTokens = 0
+		s.TotalReasonTokens = 0
+		s.TurnCount = 0
+		s.ToolCounts = make(map[string]int)
+		s.ActiveTools = make([]ActiveTool, 0)
+	}
 
 	s.SessionID = m.ID
 	s.CLIVersion = m.CLIVersion
@@ -101,24 +127,29 @@ func (s *Session) ApplyTokenCount(tc *parser.TokenCount) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	usage := tc.Info.TotalTokenUsage
-	s.TotalInputTokens = usage.InputTokens
-	s.TotalCachedTokens = usage.CachedInputTokens
-	s.TotalOutputTokens = usage.OutputTokens
-	s.TotalReasonTokens = usage.ReasoningOutputTokens
+	// Only update token data if info is present (some events have info:null).
+	if tc.Info.ModelContextWindow > 0 || tc.Info.TotalTokenUsage.TotalTokens > 0 {
+		totalUsage := tc.Info.TotalTokenUsage
+		lastUsage := tc.Info.LastTokenUsage
+		s.TotalInputTokens = totalUsage.InputTokens
+		s.TotalCachedTokens = totalUsage.CachedInputTokens
+		s.TotalOutputTokens = totalUsage.OutputTokens
+		s.TotalReasonTokens = totalUsage.ReasoningOutputTokens
 
-	s.ContextWindowSize = tc.Info.ModelContextWindow
-	s.ContextUsedTokens = usage.TotalTokens
+		s.ContextWindowSize = tc.Info.ModelContextWindow
 
-	if tc.RateLimits != nil {
-		s.HasRateLimits = true
-		s.PrimaryRatePercent = tc.RateLimits.Primary.UsedPercent
-		s.PrimaryResetsAt = tc.RateLimits.Primary.ResetsAt
-		s.SecondaryRatePercent = tc.RateLimits.Secondary.UsedPercent
-		s.SecondaryResetsAt = tc.RateLimits.Secondary.ResetsAt
-	} else {
-		s.HasRateLimits = false
+		// Prefer the latest turn usage for the context card because the total
+		// session usage can grow far beyond the active model context window.
+		if lastUsage.TotalTokens > 0 {
+			s.ContextUsedTokens = lastUsage.TotalTokens
+		} else {
+			s.ContextUsedTokens = totalUsage.TotalTokens
+		}
 	}
+
+	// Rate limits are no longer processed from session data. They are fetched
+	// exclusively via the WHAM /usage API (internal/usage package) to avoid
+	// stale data from old sessions flashing on startup.
 }
 
 // ContextPercent returns the percentage of the context window currently in
@@ -130,7 +161,11 @@ func (s *Session) ContextPercent() float64 {
 	if s.ContextWindowSize == 0 {
 		return 0
 	}
-	return float64(s.ContextUsedTokens) / float64(s.ContextWindowSize) * 100.0
+	pct := float64(s.ContextUsedTokens) / float64(s.ContextWindowSize) * 100.0
+	if pct > 100 {
+		pct = 100
+	}
+	return pct
 }
 
 // ApplyFunctionCall records a new tool invocation: increments the tool count
