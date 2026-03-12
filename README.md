@@ -1,6 +1,6 @@
 # codex-hud
 
-Real-time monitoring HUD for [OpenAI Codex CLI](https://github.com/openai/codex). Runs alongside Codex in a split pane and shows live session stats.
+[OpenAI Codex CLI](https://github.com/openai/codex)용 실시간 모니터링 HUD. Codex 옆에 분할 패널로 실행되어 세션 상태를 실시간으로 보여줍니다.
 
 ```
 ╭──────────────────────────────────────────────────────────────────╮
@@ -20,8 +20,8 @@ Real-time monitoring HUD for [OpenAI Codex CLI](https://github.com/openai/codex)
 │  ╰────────────────────────╯╰────────────────────────╯           │
 │  ╭──────────────────────────────────────────────────────────╮   │
 │  │ Usage                                                     │   │
-│  │ 5h  █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 12%        │   │
-│  │ 7d  ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 10%        │   │
+│  │ 5h  █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 12%        │   │
+│  │ 7d  ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 10%        │   │
 │  ╰──────────────────────────────────────────────────────────╯   │
 │  ╭──────────────────────────────────────────────────────────╮   │
 │  │ Activity                                                  │   │
@@ -32,21 +32,21 @@ Real-time monitoring HUD for [OpenAI Codex CLI](https://github.com/openai/codex)
 ╰──────────────────────────────────────────────────────────────────╯
 ```
 
-## Features
+## 기능
 
-- **Context window** — real-time token usage with progress bar
-- **Token stats** — input, cached, output, reasoning tokens
-- **Usage (rate limits)** — live 5h/7d usage from WHAM API
-- **Session info** — duration, turn count, working directory
-- **Activity** — active/completed tool calls
-- **Git status** — branch, dirty state (optional)
-- **Auto session switching** — detects new Codex sessions automatically
+- **컨텍스트 윈도우** — 토큰 사용량 실시간 프로그레스 바
+- **토큰 통계** — 입력, 캐시, 출력, 추론 토큰
+- **사용량 (Rate Limits)** — WHAM API 기반 5시간/7일 사용량
+- **세션 정보** — 경과 시간, 턴 수, 작업 디렉토리
+- **활동 내역** — 실행 중/완료된 도구 호출
+- **Git 상태** — 브랜치, 변경 사항 (선택)
+- **자동 세션 전환** — 새 Codex 세션 자동 감지
 
-## Install
+## 설치
 
-### Pre-built binaries (Go 불필요)
+### 바이너리 다운로드 (Go 불필요)
 
-[GitHub Releases](https://github.com/ai-ext/codex-hud/releases)에서 OS에 맞는 바이너리를 다운로드:
+[GitHub Releases](https://github.com/ai-ext/codex-hud/releases)에서 OS에 맞는 바이너리를 다운로드하세요.
 
 **macOS / Linux:**
 ```bash
@@ -71,9 +71,9 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 # 또는 CMD
 scripts\install.bat
 ```
-이 스크립트가 자동으로 `%LOCALAPPDATA%\codex-hud\`에 복사하고 PATH에 추가합니다.
+자동으로 `%LOCALAPPDATA%\codex-hud\`에 복사하고 PATH에 추가됩니다.
 
-### Build from source (Go 1.21+ 필요)
+### 소스에서 빌드 (Go 1.21+ 필요)
 
 ```bash
 git clone https://github.com/ai-ext/codex-hud.git
@@ -90,43 +90,43 @@ sudo cp dist/codex-hud /usr/local/bin/
 go build -o codex-hud.exe ./cmd/codex-hud
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
-# Cross-platform build (all 4 binaries)
+# 모든 플랫폼 바이너리 빌드
 make build-all
 ```
 
-## Usage
+## 사용법
 
-### Default (wrapper mode)
+### 기본 모드 (래퍼 모드)
 
 ```bash
 codex-hud
 ```
 
-Launches Codex + HUD together in a split pane. Automatically detects:
-- **tmux** — splits the current pane (or creates a new session)
-- **Windows Terminal** — uses `wt split-pane`
-- **Other** — falls back to HUD-only watch mode
+Codex + HUD를 분할 패널로 함께 실행합니다. 자동 감지:
+- **tmux** — 현재 패인을 분할 (또는 새 세션 생성)
+- **Windows Terminal** — `wt split-pane` 사용
+- **기타** — HUD 전용 감시 모드로 폴백
 
-### Watch mode (HUD only)
+### 감시 모드 (HUD만)
 
 ```bash
 codex-hud --watch
 ```
 
-Runs only the HUD panel. Start Codex separately in another terminal. Useful when you already have Codex running.
+HUD 패널만 실행합니다. 다른 터미널에서 Codex를 별도로 실행하세요. 이미 Codex가 실행 중일 때 유용합니다.
 
-### Options
+### 옵션
 
 ```
---watch          HUD panel only (run codex separately)
---file <path>    Monitor a specific .jsonl session file
---split bottom   Split direction: bottom (default) or right
---version        Show version
+--watch          HUD 패널만 실행 (Codex는 별도 실행)
+--file <path>    특정 .jsonl 세션 파일 모니터링
+--split bottom   분할 방향: bottom (기본값) 또는 right
+--version        버전 표시
 ```
 
-## Configuration
+## 설정
 
-Optional config file at `~/.codex/codex-hud.toml`:
+`~/.codex/codex-hud.toml` (선택사항):
 
 ```toml
 [display]
@@ -147,27 +147,27 @@ position = "bottom"
 size = 30
 ```
 
-## How it works
+## 동작 원리
 
-1. Codex CLI writes session events to `~/.codex/sessions/*.jsonl`
-2. codex-hud watches these files with fsnotify for real-time updates
-3. Each `token_count` event contains context usage, token stats
-4. Rate limits are fetched from the WHAM API (same as Codex `/status`)
-5. The TUI renders everything using [Bubble Tea](https://github.com/charmbracelet/bubbletea)
+1. Codex CLI가 세션 이벤트를 `~/.codex/sessions/*.jsonl`에 기록
+2. codex-hud가 fsnotify로 파일 변경을 실시간 감시
+3. `token_count` 이벤트에서 컨텍스트 사용량, 토큰 통계 추출
+4. WHAM API에서 Rate Limit 조회 (Codex `/status`와 동일)
+5. [Bubble Tea](https://github.com/charmbracelet/bubbletea) TUI로 렌더링
 
-## Keyboard shortcuts
+## 단축키
 
-| Key | Action |
+| 키 | 동작 |
 |-----|--------|
-| `q` / `Ctrl+C` | Quit |
-| `r` | Refresh git status |
+| `q` / `Ctrl+C` | 종료 |
+| `r` | Git 상태 새로고침 |
 
-## Requirements
+## 요구사항
 
-- [OpenAI Codex CLI](https://github.com/openai/codex) installed and authenticated
-- Go 1.21+ (for building from source)
+- [OpenAI Codex CLI](https://github.com/openai/codex) 설치 및 인증 완료
+- Go 1.21+ (소스에서 빌드할 경우에만)
 
-## Uninstall
+## 삭제
 
 ```bash
 # macOS/Linux
@@ -177,6 +177,6 @@ make uninstall
 powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1
 ```
 
-## License
+## 라이선스
 
 MIT

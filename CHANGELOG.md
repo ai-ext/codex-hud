@@ -1,40 +1,40 @@
-# Changelog
+# 변경 이력
 
 ## [0.2.0] - 2026-03-13
 
-### New Features
-- **Live usage (rate limits)** — real-time 5h/7d usage via WHAM API, matching Codex `/status`
-- **Auto session switching** — HUD automatically detects and switches to new Codex sessions
-- **tmux auto-launch** — creates a new tmux session with split panes when tmux is available but not in a session
-- **Windows Terminal support** — `wt split-pane` for native Windows split experience
-- **Pre-loading** — existing session data loaded instantly before TUI starts (no jumpy startup)
-- **Windows install script** — `install.bat` / `install.ps1` for one-click PATH setup
-- **`make install` / `make uninstall`** — quick install to `/usr/local/bin`
+### 새로운 기능
+- **실시간 사용량 (Rate Limits)** — WHAM API를 통한 5시간/7일 사용량 실시간 표시, Codex `/status`와 동일
+- **자동 세션 전환** — 새로운 Codex 세션을 자동 감지하여 전환
+- **tmux 자동 실행** — tmux가 설치되어 있지만 세션 밖일 때, 분할 패인으로 새 세션 생성
+- **Windows Terminal 지원** — `wt split-pane`으로 네이티브 Windows 분할 지원
+- **사전 로딩** — TUI 시작 전 기존 세션 데이터를 즉시 로드 (시작 시 깜빡임 없음)
+- **Windows 설치 스크립트** — `install.bat` / `install.ps1`으로 원클릭 PATH 설정
+- **`make install` / `make uninstall`** — `/usr/local/bin`에 빠른 설치/삭제
 
-### Bug Fixes
-- **Stale context on new session** — old session showing 45% context when starting a new session. Fixed by resetting per-session state when session ID changes
-- **Usage stale flash** — old rate limit data (1%/4%) flashing briefly on startup before live API data arrives. Fixed by removing session file rate limit fallback; Usage card now only appears after WHAM API responds
-- **TailFile duplication** — pre-loaded lines being re-processed through the channel. Fixed with `TailFileFromEnd()` that seeks to end of file
-- **Wrapper mode not working** — `codex-hud` just launched codex without the HUD on macOS. Fixed by auto-detecting tmux and creating split sessions
-- **Default mode confusion** — restored wrapper mode (codex + HUD together) as default; `--watch` for HUD-only
-- **Rate limits null handling** — newer Codex versions (v0.114.0+) send `rate_limits: null` in token_count events, which was clearing existing rate limit data
-- **Context token display** — now shows raw token values (e.g., `8,590 / 258,400`) matching Codex `/status` output
+### 버그 수정
+- **새 세션에서 컨텍스트 잔류** — 새 세션 시작 시 이전 세션의 45% 컨텍스트가 표시되던 문제. 세션 ID 변경 시 세션별 상태를 초기화하여 수정
+- **사용량 깜빡임** — 시작 시 이전 Rate Limit 데이터(1%/4%)가 잠깐 표시되던 문제. 세션 파일의 Rate Limit 폴백을 제거하고, WHAM API 응답 후에만 Usage 카드 표시
+- **TailFile 중복** — 사전 로딩된 줄이 채널로 다시 처리되던 문제. 파일 끝에서 시작하는 `TailFileFromEnd()`로 수정
+- **래퍼 모드 미작동** — macOS에서 `codex-hud`가 HUD 없이 codex만 실행하던 문제. tmux 자동 감지 및 분할 세션 생성으로 수정
+- **기본 모드 혼동** — 래퍼 모드(codex + HUD 함께)를 기본값으로 복원; `--watch`는 HUD 전용
+- **Rate Limits null 처리** — 최신 Codex (v0.114.0+)에서 `rate_limits: null`을 보내 기존 Rate Limit 데이터가 지워지던 문제 수정
+- **컨텍스트 토큰 표시** — Codex `/status` 출력과 일치하도록 원시 토큰 값 표시 (예: `8,590 / 258,400`)
 
-### Changes
-- Rate limits are now fetched exclusively from the WHAM API (no longer from session file data)
-- `--fresh` flag added (used internally by wrapper mode to skip old session pre-loading)
-- Simplified fallback launcher — prints guidance message instead of attempting OS-specific terminal launches
+### 변경 사항
+- Rate Limits는 이제 WHAM API에서만 조회 (더 이상 세션 파일 데이터 사용 안 함)
+- `--fresh` 플래그 추가 (래퍼 모드에서 이전 세션 사전 로딩을 건너뛸 때 내부적으로 사용)
+- 폴백 런처 단순화 — OS별 터미널 실행 시도 대신 안내 메시지 출력
 
 ## [0.1.0] - 2026-03-12
 
-### Initial Release
-- Real-time session monitoring from Codex JSONL files
-- Context window usage with progress bar
-- Token stats (input, cached, output, reasoning)
-- Session info (duration, turns, working directory)
-- Activity tracking (active/completed tool calls)
-- Git status display
-- Configurable via `~/.codex/codex-hud.toml`
-- Cross-platform builds (macOS, Linux, Windows)
-- tmux split-pane integration
-- Auto-detection of latest session file
+### 최초 릴리즈
+- Codex JSONL 파일에서 실시간 세션 모니터링
+- 컨텍스트 윈도우 사용량 프로그레스 바
+- 토큰 통계 (입력, 캐시, 출력, 추론)
+- 세션 정보 (경과 시간, 턴 수, 작업 디렉토리)
+- 활동 추적 (실행 중/완료된 도구 호출)
+- Git 상태 표시
+- `~/.codex/codex-hud.toml`로 설정 가능
+- 크로스 플랫폼 빌드 (macOS, Linux, Windows)
+- tmux 분할 패인 연동
+- 최신 세션 파일 자동 감지
