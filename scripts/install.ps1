@@ -2,12 +2,57 @@
 # Usage: powershell -ExecutionPolicy Bypass -File install.ps1
 #
 # This script:
-#   1. Downloads or copies the codex-hud binary
-#   2. Places it in a persistent directory
-#   3. Adds that directory to the user's PATH
+#   1. Ensures Windows Terminal is installed (for split-pane support)
+#   2. Downloads or copies the codex-hud binary
+#   3. Places it in a persistent directory
+#   4. Adds that directory to the user's PATH
 
 $ErrorActionPreference = "Stop"
 
+# ── Step 1: Check / install Windows Terminal ──────────────────────────
+Write-Host "Checking Windows Terminal..." -ForegroundColor Cyan
+
+$wtInstalled = $false
+
+# Check if wt.exe is in PATH
+if (Get-Command "wt" -ErrorAction SilentlyContinue) {
+    $wtInstalled = $true
+}
+
+# Also check the default install location (Microsoft Store apps)
+if (-not $wtInstalled) {
+    $wtAppPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe"
+    if (Test-Path $wtAppPath) {
+        $wtInstalled = $true
+    }
+}
+
+if ($wtInstalled) {
+    Write-Host "  Windows Terminal found." -ForegroundColor Green
+} else {
+    Write-Host "  Windows Terminal not found." -ForegroundColor Yellow
+    Write-Host "  Windows Terminal is needed for split-pane HUD display." -ForegroundColor Yellow
+    Write-Host ""
+
+    # Try winget first
+    if (Get-Command "winget" -ErrorAction SilentlyContinue) {
+        Write-Host "  Installing Windows Terminal via winget..." -ForegroundColor Cyan
+        try {
+            winget install --id Microsoft.WindowsTerminal --accept-source-agreements --accept-package-agreements
+            Write-Host "  Windows Terminal installed successfully." -ForegroundColor Green
+        } catch {
+            Write-Host "  Failed to install Windows Terminal automatically." -ForegroundColor Red
+            Write-Host "  Please install manually: https://aka.ms/terminal" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  winget not available. Please install Windows Terminal manually:" -ForegroundColor Yellow
+        Write-Host "    https://aka.ms/terminal" -ForegroundColor White
+        Write-Host "    or: Microsoft Store -> 'Windows Terminal'" -ForegroundColor White
+    }
+    Write-Host ""
+}
+
+# ── Step 2: Install codex-hud binary ─────────────────────────────────
 $InstallDir = "$env:LOCALAPPDATA\codex-hud"
 $BinaryName = "codex-hud.exe"
 $BinaryPath = Join-Path $InstallDir $BinaryName
@@ -41,6 +86,8 @@ if (-not $Source) {
     Write-Host "  - codex-hud-windows-amd64.exe"
     Write-Host "  - codex-hud.exe"
     Write-Host ""
+    Write-Host "Download from: https://github.com/ai-ext/codex-hud/releases/latest"
+    Write-Host ""
     Write-Host "Or build from source:"
     Write-Host "  go build -o codex-hud.exe ./cmd/codex-hud"
     exit 1
@@ -50,7 +97,7 @@ if (-not $Source) {
 Copy-Item -Path $Source -Destination $BinaryPath -Force
 Write-Host "Installed $Source -> $BinaryPath"
 
-# Add to user PATH if not already present
+# ── Step 3: Add to user PATH ─────────────────────────────────────────
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($UserPath -notlike "*$InstallDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
@@ -62,4 +109,6 @@ if ($UserPath -notlike "*$InstallDir*") {
 }
 
 Write-Host ""
-Write-Host "Done! Run 'codex-hud' from any directory." -ForegroundColor Green
+Write-Host "Done! Run 'codex-hud' to start." -ForegroundColor Green
+Write-Host "  codex-hud          -> Codex + HUD split pane" -ForegroundColor White
+Write-Host "  codex-hud --watch  -> HUD only (monitor mode)" -ForegroundColor White

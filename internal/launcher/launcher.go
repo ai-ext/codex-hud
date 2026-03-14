@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // Environment represents the detected terminal environment.
@@ -38,18 +39,22 @@ func Detect() Environment {
 	if os.Getenv("TMUX") != "" {
 		return EnvTmux
 	}
+	// WT_SESSION is set inside Windows Terminal tabs/panes.
 	if os.Getenv("WT_SESSION") != "" {
 		return EnvWindowsTerminal
+	}
+	// On Windows, check if wt.exe is available even without WT_SESSION
+	// (e.g., running from Git Bash or PowerShell inside Windows Terminal,
+	// or Windows Terminal is installed but env var not propagated).
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("wt"); err == nil {
+			return EnvWindowsTerminal
+		}
 	}
 	return EnvGeneric
 }
 
 // Launch opens a split pane (or new window) running the HUD alongside codex.
-//
-// codexArgs are the arguments forwarded to the codex CLI.
-// split is the pane direction ("bottom" or "right").
-// sizePercent is the HUD pane size as a percentage (10-80).
-// hudBinary is the path to the codex-hud executable.
 func Launch(codexArgs []string, split string, sizePercent int, hudBinary string) error {
 	env := Detect()
 	switch env {
@@ -58,9 +63,11 @@ func Launch(codexArgs []string, split string, sizePercent int, hudBinary string)
 	case EnvWindowsTerminal:
 		return launchWT(codexArgs, split, sizePercent, hudBinary)
 	default:
-		// If tmux is available, start a new tmux session with split panes.
-		if tmuxPath, err := exec.LookPath("tmux"); err == nil {
-			return launchNewTmuxSession(codexArgs, split, sizePercent, hudBinary, tmuxPath)
+		// On non-Windows, try tmux.
+		if runtime.GOOS != "windows" {
+			if tmuxPath, err := exec.LookPath("tmux"); err == nil {
+				return launchNewTmuxSession(codexArgs, split, sizePercent, hudBinary, tmuxPath)
+			}
 		}
 		return launchFallback(codexArgs, hudBinary, runtime.GOOS)
 	}
@@ -69,14 +76,22 @@ func Launch(codexArgs []string, split string, sizePercent int, hudBinary string)
 // buildCodexCommand returns the codex binary name and its argument list.
 func buildCodexCommand(codexArgs []string) (string, []string) {
 	bin := "codex"
+	if runtime.GOOS == "windows" {
+		// Try codex.cmd first (npm global install), then codex.exe.
+		if _, err := exec.LookPath("codex.cmd"); err == nil {
+			bin = "codex.cmd"
+		}
+	}
 	args := make([]string, len(codexArgs))
 	copy(args, codexArgs)
 	return bin, args
 }
 
 // hudWatchCommand returns the full command string to run the HUD in watch mode.
-// The --fresh flag tells the HUD to skip pre-loading old session data since
-// the wrapper is about to start a new codex session.
 func hudWatchCommand(hudBinary string) string {
+	// Quote the path if it contains spaces (common on Windows).
+	if strings.Contains(hudBinary, " ") {
+		return fmt.Sprintf("\"%s\" --watch --fresh", hudBinary)
+	}
 	return fmt.Sprintf("%s --watch --fresh", hudBinary)
 }

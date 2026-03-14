@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "0.2.1"
+var version = "0.2.2"
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -60,6 +60,11 @@ func runWrapper(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		self = "codex-hud"
 	}
+	// Resolve symlinks and clean the path for cross-platform compatibility.
+	if resolved, e := filepath.EvalSymlinks(self); e == nil {
+		self = resolved
+	}
+	self = filepath.Clean(self)
 	return launcher.Launch(args, split, size, self)
 }
 

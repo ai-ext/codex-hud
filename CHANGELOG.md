@@ -1,5 +1,22 @@
 # 변경 이력
 
+## [0.2.2] - 2026-03-14
+
+### 버그 수정
+- **Windows 플랫폼 오류** — Windows에서 tmux 설치를 요구하던 문제 수정. Windows Terminal/새 창 열기/watch 모드 순으로 자동 폴백
+- **wt split-pane 인자 처리** — 바이너리 경로와 플래그를 개별 인자로 분리하여 "파일 찾을 수 없음" 오류 해결
+- **Git Bash 호환성** — Windows에서 `os.Executable()` 경로의 심볼릭 링크 해석 및 경로 정규화
+- **codex.cmd 감지** — npm으로 설치된 codex (`codex.cmd`)를 Windows에서 자동 감지
+
+### 새로운 기능
+- **Windows Terminal 자동 설치** — `install.ps1` 실행 시 Windows Terminal 미설치면 `winget`으로 자동 설치
+- **Windows 새 창 폴백** — Windows Terminal 없어도 `cmd /c start`로 별도 창에 HUD 실행
+- **wt.exe PATH 감지** — `WT_SESSION` 환경변수 없어도 PATH에서 `wt.exe` 탐지
+
+### 변경 사항
+- Windows에서 tmux 탐색 제거 (macOS/Linux에서만 시도)
+- Windows fallback 안내 메시지를 Windows Terminal 안내로 변경
+
 ## [0.2.1] - 2026-03-14
 
 ### 새로운 기능

@@ -17,13 +17,15 @@ func launchWT(codexArgs []string, split string, sizePercent int, hudBinary strin
 		dirFlag = "-V"
 	}
 
-	hudCmd := hudWatchCommand(hudBinary)
 	sizeStr := fmt.Sprintf("%.2f", float64(sizePercent)/100.0)
+
+	// Pass the HUD binary and its flags as separate arguments to wt.
+	// wt split-pane expects: wt split-pane [options] <command> [args...]
 	wtArgs := []string{
 		"split-pane",
 		dirFlag,
 		"--size", sizeStr,
-		hudCmd,
+		hudBinary, "--watch", "--fresh",
 	}
 
 	splitCmd := exec.Command("wt", wtArgs...)
@@ -33,6 +35,7 @@ func launchWT(codexArgs []string, split string, sizePercent int, hudBinary strin
 		return fmt.Errorf("wt split-pane failed: %w", err)
 	}
 
+	// Run codex in the current pane.
 	codexBin, codexCmdArgs := buildCodexCommand(codexArgs)
 	c := exec.Command(codexBin, codexCmdArgs...)
 	c.Stdin = os.Stdin
