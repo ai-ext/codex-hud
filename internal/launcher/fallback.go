@@ -4,15 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 )
 
 // launchFallback is used when no split-capable environment is found.
-// On Windows, it opens a new console window for the HUD.
-// On other platforms, it prints guidance and runs in watch mode.
 func launchFallback(codexArgs []string, hudBinary string, goos string) error {
 	if goos == "windows" {
-		return launchWindowsFallback(codexArgs, hudBinary)
+		return launchWindowsFallback(hudBinary)
 	}
 
 	fmt.Println("┌─────────────────────────────────────────────────────┐")
@@ -20,10 +17,10 @@ func launchFallback(codexArgs []string, hudBinary string, goos string) error {
 	fmt.Println("│                                                     │")
 	switch goos {
 	case "darwin":
-		fmt.Println("│  Install tmux for the best experience:              │")
+		fmt.Println("│  Install tmux for split-pane:                       │")
 		fmt.Println("│    brew install tmux                                │")
 	case "linux":
-		fmt.Println("│  Install tmux for the best experience:              │")
+		fmt.Println("│  Install tmux for split-pane:                       │")
 		fmt.Println("│    sudo apt install tmux                            │")
 	}
 	fmt.Println("│                                                     │")
@@ -39,42 +36,47 @@ func launchFallback(codexArgs []string, hudBinary string, goos string) error {
 	return cmd.Run()
 }
 
-// launchWindowsFallback opens the HUD in a new console window and runs codex
-// in the current window. Works on any Windows terminal (CMD, PowerShell, Git Bash).
-func launchWindowsFallback(codexArgs []string, hudBinary string) error {
-	// "start" opens a new console window on Windows.
-	// Syntax: cmd /c start "title" <command> <args...>
-	// The first quoted string after "start" is treated as the window title.
-	var startCmd *exec.Cmd
+// launchWindowsFallback tells the user to install Windows Terminal.
+// Split-pane on Windows requires Windows Terminal — no alternative fallback.
+func launchWindowsFallback(hudBinary string) error {
+	fmt.Println()
+	fmt.Println("  codex-hud requires Windows Terminal for split-pane display.")
+	fmt.Println()
 
-	if runtime.GOOS == "windows" {
-		startCmd = exec.Command("cmd", "/c", "start", "codex-hud", hudBinary, "--watch", "--fresh")
-	} else {
-		// Shouldn't reach here, but just in case.
-		startCmd = exec.Command(hudBinary, "--watch", "--fresh")
-	}
-	startCmd.Stdout = os.Stdout
-	startCmd.Stderr = os.Stderr
-	if err := startCmd.Run(); err != nil {
-		// If new window fails, fall back to watch mode in current terminal.
-		fmt.Println("Could not open new window. Starting HUD in current terminal.")
-		fmt.Println("Run 'codex' in another terminal to see stats.")
-		fmt.Println()
-		cmd := exec.Command(hudBinary, "--watch")
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		return cmd.Run()
+	// Try auto-install via winget
+	if _, err := exec.LookPath("winget"); err == nil {
+		fmt.Println("  Windows Terminal is not installed.")
+		fmt.Print("  Install now via winget? [Y/n]: ")
+
+		var answer string
+		fmt.Scanln(&answer)
+		if answer == "" || answer == "y" || answer == "Y" {
+			fmt.Println()
+			fmt.Println("  Installing Windows Terminal...")
+			installCmd := exec.Command("winget", "install",
+				"--id", "Microsoft.WindowsTerminal",
+				"--accept-source-agreements",
+				"--accept-package-agreements",
+			)
+			installCmd.Stdout = os.Stdout
+			installCmd.Stderr = os.Stderr
+			if err := installCmd.Run(); err != nil {
+				fmt.Println()
+				fmt.Println("  Installation failed. Please install manually:")
+				fmt.Println("    https://aka.ms/terminal")
+				return fmt.Errorf("Windows Terminal installation failed: %w", err)
+			}
+			fmt.Println()
+			fmt.Println("  Windows Terminal installed successfully!")
+			fmt.Println("  Please restart your terminal, then run 'codex-hud' again.")
+			return nil
+		}
 	}
 
-	// Run codex in the current window.
-	codexBin, codexCmdArgs := buildCodexCommand(codexArgs)
-	c := exec.Command(codexBin, codexCmdArgs...)
-	c.Stdin = os.Stdin
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	if err := c.Run(); err != nil {
-		return fmt.Errorf("codex exited with error: %w", err)
-	}
-	return nil
+	fmt.Println("  Please install Windows Terminal:")
+	fmt.Println("    winget install Microsoft.WindowsTerminal")
+	fmt.Println("    or: https://aka.ms/terminal")
+	fmt.Println()
+	fmt.Println("  After installing, restart your terminal and run 'codex-hud' again.")
+	return fmt.Errorf("Windows Terminal required for split-pane mode")
 }

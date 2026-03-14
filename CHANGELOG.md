@@ -1,5 +1,12 @@
 # 변경 이력
 
+## [0.2.3] - 2026-03-14
+
+### 변경 사항
+- **Windows 새 창 폴백 제거** — WT 없을 때 별도 창 열기 대신, Windows Terminal 설치를 안내/자동 설치 후 종료
+- **Windows Terminal 필수** — Windows에서 split-pane 경험을 보장하기 위해 WT가 없으면 `winget`으로 설치 유도
+- **install.ps1 개선** — WT 미설치 시 winget 자동 설치 + 릴리즈 다운로드 안내 추가
+
 ## [0.2.2] - 2026-03-14
 
 ### 버그 수정
