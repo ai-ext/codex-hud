@@ -9,72 +9,113 @@ import (
 // View renders the full TUI layout.
 func (m Model) View() string {
 	if m.Waiting {
-		msg := lipgloss.NewStyle().
+		innerWidth := m.Width - 8
+		if innerWidth < 20 {
+			innerWidth = 20
+		}
+
+		var parts []string
+		parts = append(parts, lipgloss.NewStyle().
 			Foreground(ColorDim).
-			Render("Waiting for Codex session...")
-		return OuterStyle.Width(m.Width - 4).Render(msg)
+			Render("Waiting for Codex session..."))
+
+		// Show usage even while waiting (WHAM API doesn't need a session).
+		if m.State.HasRateLimits {
+			parts = append(parts, "")
+			parts = append(parts, RenderRateLimit(m.State, innerWidth))
+		}
+
+		body := lipgloss.JoinVertical(lipgloss.Left, parts...)
+		return OuterStyle.Width(m.Width - 4).Height(m.Height - 4).Render(body)
 	}
 
 	// Compute available inner width.
-	// OuterStyle uses Width(m.Width-4) which includes padding but not border.
-	// Horizontal padding is 2*2=4, so content area = (m.Width-4) - 4 = m.Width-8.
 	innerWidth := m.Width - 8
 	if innerWidth < 20 {
 		innerWidth = 20
 	}
 
+	// Available inner height: total height minus outer border (2) and padding (2).
+	innerHeight := m.Height - 4
+
+	// Compact mode only when very tight (< 12 usable lines).
+	// Normal card layout is ~22 lines; viewport clipping handles overflow.
+	compact := innerHeight < 12
+
 	var sections []string
 
-	// Header
+	// Header (always shown — 1 line)
 	sections = append(sections, RenderHeader(m.State, innerWidth))
 
-	// Context bar
-	sections = append(sections, RenderContext(m.State, innerWidth))
+	if compact {
+		// Compact: context in single line (no card border)
+		sections = append(sections, RenderContextCompact(m.State, innerWidth))
 
-	// Tokens and Session side-by-side if wide enough
-	if m.Width >= 80 {
-		halfWidth := innerWidth / 2
+		// Compact: tokens + session merged into 2 lines
+		sections = append(sections, RenderTokensCompact(m.State, innerWidth))
+		sections = append(sections, RenderSessionCompact(m.State, m.GitStatus, innerWidth))
 
-		// First pass: render both to measure content lines.
-		tokensCard := RenderTokens(m.State, halfWidth)
-		sessionCard := RenderSession(m.State, m.GitStatus, halfWidth)
-
-		tLines := strings.Count(tokensCard, "\n") + 1
-		sLines := strings.Count(sessionCard, "\n") + 1
-
-		// Second pass: re-render with equalized content height.
-		// The card has 2 border lines (top + bottom), so inner content
-		// lines = total lines - 2. We want both to have the same total.
-		maxLines := tLines
-		if sLines > maxLines {
-			maxLines = sLines
+		// Compact: usage in 2 lines (no card border)
+		if m.Config.Display.ShowRateLimit {
+			if rl := RenderRateLimitCompact(m.State, innerWidth); rl != "" {
+				sections = append(sections, rl)
+			}
 		}
-		// inner content lines = maxLines - 2 (border top/bottom)
-		minContent := maxLines - 2
-		tokensCard = RenderTokens(m.State, halfWidth, minContent)
-		sessionCard = RenderSession(m.State, m.GitStatus, halfWidth, minContent)
 
-		row := lipgloss.JoinHorizontal(lipgloss.Top, tokensCard, sessionCard)
-		sections = append(sections, row)
+		// Compact: activity in 1 line
+		if m.Config.Display.ShowActivity {
+			if act := RenderActivityCompact(m.State, innerWidth); act != "" {
+				sections = append(sections, act)
+			}
+		}
 	} else {
-		sections = append(sections, RenderTokens(m.State, innerWidth))
-		sections = append(sections, RenderSession(m.State, m.GitStatus, innerWidth))
-	}
+		// Normal: full card layout
+		sections = append(sections, RenderContext(m.State, innerWidth))
 
-	// Rate limit (conditional)
-	if m.Config.Display.ShowRateLimit {
-		if rl := RenderRateLimit(m.State, innerWidth); rl != "" {
-			sections = append(sections, rl)
+		if m.Width >= 80 {
+			halfWidth := innerWidth / 2
+
+			tokensCard := RenderTokens(m.State, halfWidth)
+			sessionCard := RenderSession(m.State, m.GitStatus, halfWidth)
+
+			tLines := strings.Count(tokensCard, "\n") + 1
+			sLines := strings.Count(sessionCard, "\n") + 1
+
+			maxLines := tLines
+			if sLines > maxLines {
+				maxLines = sLines
+			}
+			minContent := maxLines - 2
+			tokensCard = RenderTokens(m.State, halfWidth, minContent)
+			sessionCard = RenderSession(m.State, m.GitStatus, halfWidth, minContent)
+
+			row := lipgloss.JoinHorizontal(lipgloss.Top, tokensCard, sessionCard)
+			sections = append(sections, row)
+		} else {
+			sections = append(sections, RenderTokens(m.State, innerWidth))
+			sections = append(sections, RenderSession(m.State, m.GitStatus, innerWidth))
 		}
-	}
 
-	// Activity (conditional)
-	if m.Config.Display.ShowActivity {
-		if act := RenderActivity(m.State, innerWidth); act != "" {
-			sections = append(sections, act)
+		if m.Config.Display.ShowRateLimit {
+			if rl := RenderRateLimit(m.State, innerWidth); rl != "" {
+				sections = append(sections, rl)
+			}
+		}
+
+		if m.Config.Display.ShowActivity {
+			if act := RenderActivity(m.State, innerWidth); act != "" {
+				sections = append(sections, act)
+			}
 		}
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	return OuterStyle.Width(m.Width - 4).Render(body)
+	rendered := OuterStyle.Width(m.Width - 4).Height(m.Height - 4).Render(body)
+
+	// Clip to terminal height so the top (header) is always visible.
+	lines := strings.Split(rendered, "\n")
+	if len(lines) > m.Height {
+		lines = lines[:m.Height]
+	}
+	return strings.Join(lines, "\n")
 }

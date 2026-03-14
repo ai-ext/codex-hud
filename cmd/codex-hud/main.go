@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "0.2.0"
+var version = "0.2.1"
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -31,6 +31,7 @@ Use --watch to run the HUD panel only (monitor an existing session).`,
 	rootCmd.Flags().Bool("watch", false, "Watch mode: HUD panel only (run codex separately)")
 	rootCmd.Flags().Bool("fresh", false, "Skip pre-loading old session data (used by wrapper mode)")
 	rootCmd.Flags().String("split", "bottom", "Split direction: bottom or right")
+	rootCmd.Flags().Int("size", 40, "HUD pane size in percent (default 40)")
 	rootCmd.Version = version
 
 	if err := rootCmd.Execute(); err != nil {
@@ -51,11 +52,15 @@ func run(cmd *cobra.Command, args []string) error {
 // runWrapper launches codex + HUD in a split pane.
 func runWrapper(cmd *cobra.Command, args []string) error {
 	split, _ := cmd.Flags().GetString("split")
+	size, _ := cmd.Flags().GetInt("size")
+	if size < 10 || size > 80 {
+		size = 40
+	}
 	self, err := os.Executable()
 	if err != nil {
 		self = "codex-hud"
 	}
-	return launcher.Launch(args, split, self)
+	return launcher.Launch(args, split, size, self)
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {

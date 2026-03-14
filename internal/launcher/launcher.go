@@ -48,18 +48,19 @@ func Detect() Environment {
 //
 // codexArgs are the arguments forwarded to the codex CLI.
 // split is the pane direction ("bottom" or "right").
+// sizePercent is the HUD pane size as a percentage (10-80).
 // hudBinary is the path to the codex-hud executable.
-func Launch(codexArgs []string, split string, hudBinary string) error {
+func Launch(codexArgs []string, split string, sizePercent int, hudBinary string) error {
 	env := Detect()
 	switch env {
 	case EnvTmux:
-		return launchTmux(codexArgs, split, hudBinary)
+		return launchTmux(codexArgs, split, sizePercent, hudBinary)
 	case EnvWindowsTerminal:
-		return launchWT(codexArgs, split, hudBinary)
+		return launchWT(codexArgs, split, sizePercent, hudBinary)
 	default:
 		// If tmux is available, start a new tmux session with split panes.
 		if tmuxPath, err := exec.LookPath("tmux"); err == nil {
-			return launchNewTmuxSession(codexArgs, split, hudBinary, tmuxPath)
+			return launchNewTmuxSession(codexArgs, split, sizePercent, hudBinary, tmuxPath)
 		}
 		return launchFallback(codexArgs, hudBinary, runtime.GOOS)
 	}

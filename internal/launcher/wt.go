@@ -8,22 +8,21 @@ import (
 
 // launchWT splits the current Windows Terminal tab and runs the HUD in the new
 // pane while executing codex in the original pane.
-func launchWT(codexArgs []string, split string, hudBinary string) error {
-	// Determine split direction flag.
-	// Windows Terminal uses -V for vertical (top/bottom) and -H for horizontal (left/right).
+func launchWT(codexArgs []string, split string, sizePercent int, hudBinary string) error {
 	var dirFlag string
 	switch split {
 	case "right":
 		dirFlag = "-H"
-	default: // "bottom"
+	default:
 		dirFlag = "-V"
 	}
 
 	hudCmd := hudWatchCommand(hudBinary)
+	sizeStr := fmt.Sprintf("%.2f", float64(sizePercent)/100.0)
 	wtArgs := []string{
 		"split-pane",
 		dirFlag,
-		"--size", "0.3",
+		"--size", sizeStr,
 		hudCmd,
 	}
 
@@ -34,7 +33,6 @@ func launchWT(codexArgs []string, split string, hudBinary string) error {
 		return fmt.Errorf("wt split-pane failed: %w", err)
 	}
 
-	// Run codex in the current pane.
 	codexBin, codexCmdArgs := buildCodexCommand(codexArgs)
 	c := exec.Command(codexBin, codexCmdArgs...)
 	c.Stdin = os.Stdin
