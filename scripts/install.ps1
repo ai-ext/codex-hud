@@ -102,7 +102,24 @@ if ($Source) {
 Unblock-File -Path $BinaryPath -ErrorAction SilentlyContinue
 Write-Host "Installed to $BinaryPath"
 
-# ── Step 3: Add to user PATH ─────────────────────────────────────────
+# ── Step 3: Add Windows Defender exclusion ────────────────────────────
+# Unsigned open-source binaries can be blocked by application control policies.
+# Add the install directory as a Defender exclusion (requires admin).
+try {
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($isAdmin) {
+        Add-MpExclusion -ExclusionPath $InstallDir -ErrorAction Stop
+        Write-Host "Added Windows Defender exclusion for $InstallDir" -ForegroundColor Green
+    } else {
+        Write-Host ""
+        Write-Host "  (Optional) Run as Administrator to add Defender exclusion:" -ForegroundColor Yellow
+        Write-Host "    Add-MpExclusion -ExclusionPath '$InstallDir'" -ForegroundColor White
+    }
+} catch {
+    Write-Host "  Could not add Defender exclusion (non-critical)" -ForegroundColor Yellow
+}
+
+# ── Step 4: Add to user PATH ─────────────────────────────────────────
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($UserPath -notlike "*$InstallDir*") {
     [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
