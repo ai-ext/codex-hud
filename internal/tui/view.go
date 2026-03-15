@@ -39,7 +39,6 @@ func (m Model) View() string {
 	innerHeight := m.Height - 4
 
 	// Compact mode only when very tight (< 12 usable lines).
-	// Normal card layout is ~22 lines; viewport clipping handles overflow.
 	compact := innerHeight < 12
 
 	var sections []string
@@ -50,6 +49,11 @@ func (m Model) View() string {
 	if compact {
 		// Compact: context in single line (no card border)
 		sections = append(sections, RenderContextCompact(m.State, innerWidth))
+
+		// Compact: skills right after context
+		if sk := RenderSkillsCompact(m.State, innerWidth); sk != "" {
+			sections = append(sections, sk)
+		}
 
 		// Compact: tokens + session merged into 2 lines
 		sections = append(sections, RenderTokensCompact(m.State, innerWidth))
@@ -71,6 +75,11 @@ func (m Model) View() string {
 	} else {
 		// Normal: full card layout
 		sections = append(sections, RenderContext(m.State, innerWidth))
+
+		// Skills right after context
+		if sk := RenderSkillsCompact(m.State, innerWidth); sk != "" {
+			sections = append(sections, sk)
+		}
 
 		if m.Width >= 80 {
 			halfWidth := innerWidth / 2
@@ -96,15 +105,30 @@ func (m Model) View() string {
 			sections = append(sections, RenderSession(m.State, m.GitStatus, innerWidth))
 		}
 
+		// For remaining sections, check available vertical space and fall
+		// back to compact rendering when the full card would be clipped.
+		usedHeight := lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, sections...))
+		remaining := innerHeight - usedHeight
+
 		if m.Config.Display.ShowRateLimit {
-			if rl := RenderRateLimit(m.State, innerWidth); rl != "" {
-				sections = append(sections, rl)
+			if full := RenderRateLimit(m.State, innerWidth); full != "" {
+				if lipgloss.Height(full) <= remaining {
+					sections = append(sections, full)
+				} else if c := RenderRateLimitCompact(m.State, innerWidth); c != "" {
+					sections = append(sections, c)
+				}
+				usedHeight = lipgloss.Height(lipgloss.JoinVertical(lipgloss.Left, sections...))
+				remaining = innerHeight - usedHeight
 			}
 		}
 
 		if m.Config.Display.ShowActivity {
-			if act := RenderActivity(m.State, innerWidth); act != "" {
-				sections = append(sections, act)
+			if full := RenderActivity(m.State, innerWidth); full != "" {
+				if lipgloss.Height(full) <= remaining {
+					sections = append(sections, full)
+				} else if c := RenderActivityCompact(m.State, innerWidth); c != "" {
+					sections = append(sections, c)
+				}
 			}
 		}
 	}

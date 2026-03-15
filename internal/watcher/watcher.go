@@ -306,6 +306,19 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 				if info.IsDir() {
 					// New subdirectory: start watching it too.
 					_ = watcher.Add(event.Name)
+					// Scan for .jsonl files that may have been created
+					// between the directory creation and our watcher.Add.
+					entries, _ := os.ReadDir(event.Name)
+					for _, e := range entries {
+						if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+							path := filepath.Join(event.Name, e.Name())
+							if currentStop != nil {
+								close(currentStop)
+							}
+							currentStop = make(chan struct{})
+							go TailFile(path, lines, currentStop)
+						}
+					}
 					continue
 				}
 				if strings.HasSuffix(event.Name, ".jsonl") {

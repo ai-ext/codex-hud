@@ -17,7 +17,9 @@ func RenderRateLimit(s *state.Session, width int, minContentLines ...int) string
 
 	title := TitleStyle.Render("Usage")
 
-	innerWidth := width - 4
+	// CardStyle has 1-char border + 1-char padding on each side = 4 chars total.
+	// CardStyle.Width(width-2) sets total width; content area = width - 2 - 4 = width - 6.
+	innerWidth := width - 6
 	if innerWidth < 20 {
 		innerWidth = 20
 	}

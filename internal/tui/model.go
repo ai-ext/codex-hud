@@ -141,6 +141,12 @@ func ProcessLine(s *state.Session, line string) {
 				return
 			}
 			s.ApplyTokenCount(tc)
+		case "user_message":
+			um, err := ev.AsUserMessage()
+			if err != nil {
+				return
+			}
+			s.ApplyUserMessage(um)
 		case "task_started":
 			// Task started events are noted but no specific state update needed.
 		}

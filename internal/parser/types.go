@@ -78,9 +78,16 @@ type TurnContext struct {
 	CWD               string            `json:"cwd"`
 	Model             string            `json:"model"`
 	Personality       string            `json:"personality"`
+	UserInstructions  string            `json:"user_instructions"`
 	ApprovalPolicy    string            `json:"approval_policy"`
 	SandboxPolicy     SandboxPolicy     `json:"sandbox_policy"`
 	CollaborationMode CollaborationMode `json:"collaboration_mode"`
+}
+
+// Skill represents a registered skill parsed from user_instructions.
+type Skill struct {
+	Name     string
+	FilePath string
 }
 
 // SandboxPolicy describes the sandboxing configuration.
@@ -160,6 +167,36 @@ func (e *Event) AsTokenCount() (*TokenCount, error) {
 		return nil, fmt.Errorf("decoding token_count payload: %w", err)
 	}
 	return &tc, nil
+}
+
+// ---------------------------------------------------------------------------
+// UserMessage (event_msg with subtype "user_message")
+// ---------------------------------------------------------------------------
+
+// UserMessage represents the payload of an event_msg with subtype/type
+// "user_message". It carries the user's input text and structured elements
+// such as skill invocations ($skill-name placeholders).
+type UserMessage struct {
+	Subtype      string        `json:"subtype"`
+	SubtypeAlt   string        `json:"type"`
+	Message      string        `json:"message"`
+	TextElements []TextElement `json:"text_elements"`
+}
+
+// TextElement describes a structured reference within the user's message,
+// such as a $skill-name placeholder.
+type TextElement struct {
+	Placeholder string `json:"placeholder"`
+}
+
+// AsUserMessage deserializes the payload as a UserMessage. The caller should
+// first verify that EventMsgType() == "user_message".
+func (e *Event) AsUserMessage() (*UserMessage, error) {
+	var um UserMessage
+	if err := json.Unmarshal(e.Payload, &um); err != nil {
+		return nil, fmt.Errorf("decoding user_message payload: %w", err)
+	}
+	return &um, nil
 }
 
 // ---------------------------------------------------------------------------

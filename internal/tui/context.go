@@ -15,8 +15,8 @@ func RenderContext(s *state.Session, width int) string {
 
 	title := TitleStyle.Render("Context")
 
-	// Account for card padding (1 on each side) and border (1 on each side) = 4 total
-	innerWidth := width - 4
+	// CardStyle.Width(width-2) total; content area = (width-2) - border(2) - padding(2) = width-6
+	innerWidth := width - 6
 	if innerWidth < 10 {
 		innerWidth = 10
 	}

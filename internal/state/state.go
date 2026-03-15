@@ -2,6 +2,8 @@
 package state
 
 import (
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,13 +61,19 @@ type Session struct {
 	// Tool tracking
 	ToolCounts  map[string]int
 	ActiveTools []ActiveTool
+
+	// Skill tracking
+	SkillRegistry    map[string]string // file path → skill name
+	ActiveSkillNames []string          // activated skill names (deduplicated)
 }
 
 // New creates a new Session with initialized maps and slices.
 func New() *Session {
 	return &Session{
-		ToolCounts:  make(map[string]int),
-		ActiveTools: make([]ActiveTool, 0),
+		ToolCounts:       make(map[string]int),
+		ActiveTools:      make([]ActiveTool, 0),
+		SkillRegistry:    make(map[string]string),
+		ActiveSkillNames: make([]string, 0),
 	}
 }
 
@@ -97,6 +105,8 @@ func (s *Session) ApplySessionMeta(m *parser.SessionMeta) {
 		s.TurnCount = 0
 		s.ToolCounts = make(map[string]int)
 		s.ActiveTools = make([]ActiveTool, 0)
+		s.SkillRegistry = make(map[string]string)
+		s.ActiveSkillNames = make([]string, 0)
 	}
 
 	s.SessionID = m.ID
@@ -109,6 +119,10 @@ func (s *Session) ApplySessionMeta(m *parser.SessionMeta) {
 	}
 }
 
+// skillLineRe matches skill entries in user_instructions:
+//   - skill-name: description (file: /path/to/skill)
+var skillLineRe = regexp.MustCompile(`- ([^:]+): .+ \(file: ([^)]+)\)`)
+
 // ApplyTurnContext sets model and policy information from a parsed
 // TurnContext event.
 func (s *Session) ApplyTurnContext(tc *parser.TurnContext) {
@@ -119,6 +133,47 @@ func (s *Session) ApplyTurnContext(tc *parser.TurnContext) {
 	s.ReasoningEffort = tc.CollaborationMode.Settings.ReasoningEffort
 	s.ApprovalPolicy = tc.ApprovalPolicy
 	s.SandboxType = tc.SandboxPolicy.Type
+
+	// Clear active skills each turn — only skills accessed in the current
+	// turn will be shown (real-time display).
+	s.ActiveSkillNames = s.ActiveSkillNames[:0]
+
+	// Parse skill registry from user_instructions.
+	if tc.UserInstructions != "" {
+		matches := skillLineRe.FindAllStringSubmatch(tc.UserInstructions, -1)
+		for _, m := range matches {
+			name := strings.TrimSpace(m[1])
+			path := strings.TrimSpace(m[2])
+			s.SkillRegistry[path] = name
+		}
+	}
+}
+
+// ApplyUserMessage extracts skill invocations from the user's message.
+// Skill references appear as $skill-name placeholders in text_elements.
+func (s *Session) ApplyUserMessage(um *parser.UserMessage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, te := range um.TextElements {
+		if strings.HasPrefix(te.Placeholder, "$") {
+			name := strings.TrimPrefix(te.Placeholder, "$")
+			if name != "" {
+				s.addActiveSkill(name)
+			}
+		}
+	}
+}
+
+// addActiveSkill appends a skill name if not already present.
+// Must be called with s.mu held.
+func (s *Session) addActiveSkill(name string) {
+	for _, existing := range s.ActiveSkillNames {
+		if existing == name {
+			return
+		}
+	}
+	s.ActiveSkillNames = append(s.ActiveSkillNames, name)
 }
 
 // ApplyTokenCount sets token usage, context window, and rate limit data from
