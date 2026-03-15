@@ -56,6 +56,7 @@ if ($wtInstalled) {
 $InstallDir = "$env:LOCALAPPDATA\codex-hud"
 $BinaryName = "codex-hud.exe"
 $BinaryPath = Join-Path $InstallDir $BinaryName
+$DownloadUrl = "https://github.com/ai-ext/codex-hud/releases/latest/download/codex-hud-windows-amd64.exe"
 
 # Create install directory
 if (-not (Test-Path $InstallDir)) {
@@ -63,7 +64,7 @@ if (-not (Test-Path $InstallDir)) {
     Write-Host "Created $InstallDir"
 }
 
-# Find the binary - check common locations
+# Find the binary locally first, otherwise download from GitHub
 $Source = $null
 $SearchPaths = @(
     ".\codex-hud-windows-amd64.exe",
@@ -79,23 +80,27 @@ foreach ($p in $SearchPaths) {
     }
 }
 
-if (-not $Source) {
-    Write-Host "Error: codex-hud binary not found." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Place one of these files in the current directory:"
-    Write-Host "  - codex-hud-windows-amd64.exe"
-    Write-Host "  - codex-hud.exe"
-    Write-Host ""
-    Write-Host "Download from: https://github.com/ai-ext/codex-hud/releases/latest"
-    Write-Host ""
-    Write-Host "Or build from source:"
-    Write-Host "  go build -o codex-hud.exe ./cmd/codex-hud"
-    exit 1
+if ($Source) {
+    Write-Host "Found local binary: $Source" -ForegroundColor Green
+    Copy-Item -Path $Source -Destination $BinaryPath -Force
+} else {
+    Write-Host "Downloading codex-hud from GitHub..." -ForegroundColor Cyan
+    try {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $BinaryPath -UseBasicParsing
+        Write-Host "  Downloaded successfully." -ForegroundColor Green
+    } catch {
+        Write-Host "Error: Failed to download codex-hud." -ForegroundColor Red
+        Write-Host "  URL: $DownloadUrl"
+        Write-Host "  $($_.Exception.Message)"
+        Write-Host ""
+        Write-Host "Download manually from: https://github.com/ai-ext/codex-hud/releases/latest"
+        exit 1
+    }
 }
 
-# Copy binary
-Copy-Item -Path $Source -Destination $BinaryPath -Force
-Write-Host "Installed $Source -> $BinaryPath"
+# Remove "downloaded from internet" block so Windows doesn't flag it
+Unblock-File -Path $BinaryPath -ErrorAction SilentlyContinue
+Write-Host "Installed to $BinaryPath"
 
 # ── Step 3: Add to user PATH ─────────────────────────────────────────
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
