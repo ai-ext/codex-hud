@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ds/codex-hud/internal/config"
@@ -124,8 +125,14 @@ func runWatch(cmd *cobra.Command, args []string) error {
 	// codex starts a new session (e.g. in wrapper mode where codex launches
 	// slightly after the HUD). ApplySessionMeta resets per-session state
 	// when the session ID changes.
+	//
+	// In fresh mode, pass the current time so the poll ignores old sessions.
+	var minModTime time.Time
+	if fresh {
+		minModTime = time.Now()
+	}
 	go func() {
-		watcher.WatchForNewSession(sessionsDir, lines, stop)
+		watcher.WatchForNewSession(sessionsDir, lines, stop, minModTime)
 	}()
 
 	// --- Phase 3: Start TUI with pre-populated state ---

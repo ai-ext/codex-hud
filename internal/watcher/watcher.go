@@ -273,7 +273,7 @@ func scanFileForRateLimits(path string) *parser.RateLimits {
 // subdirectories (Codex creates date-based dirs). It blocks until stop is closed.
 // A periodic poll runs as a fallback in case fsnotify misses events (common on
 // Windows).
-func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan struct{}) {
+func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan struct{}, minModTime time.Time) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return
@@ -327,6 +327,15 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 			// Poll for the latest .jsonl file in case fsnotify missed it.
 			latest, err := FindLatestSession(sessionsDir)
 			if err == nil && latest != "" {
+				// In fresh mode, skip files older than minModTime to
+				// avoid loading stale session data.
+				if !minModTime.IsZero() {
+					if info, e := os.Stat(latest); e == nil {
+						if info.ModTime().Before(minModTime) {
+							continue
+						}
+					}
+				}
 				startTailing(latest)
 			}
 		case event, ok := <-watcher.Events:
