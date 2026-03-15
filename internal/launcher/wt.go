@@ -17,22 +17,27 @@ func launchWT(codexArgs []string, split string, sizePercent int, hudBinary strin
 	return launchWTNew(codexArgs, split, sizePercent, hudBinary)
 }
 
-// launchWTSplit splits the current Windows Terminal tab (when already inside WT).
-func launchWTSplit(codexArgs []string, split string, sizePercent int, hudBinary string) error {
-	// WT flags are opposite of tmux:
-	//   -H = horizontal split = pane below (top/bottom)
-	//   -V = vertical split   = pane to right (side by side)
-	var dirFlag string
-	switch split {
-	case "right":
-		dirFlag = "-V"
-	default:
-		dirFlag = "-H"
+// wtDirFlag returns the WT split direction flag.
+// WT flags are opposite of tmux:
+//
+//	-H = horizontal split = pane below (top/bottom)
+//	-V = vertical split   = pane to right (side by side)
+func wtDirFlag(split string) string {
+	if split == "right" {
+		return "-V"
 	}
+	return "-H"
+}
 
+// launchWTSplit splits the current Windows Terminal tab (when already inside WT).
+// Uses "-w 0" to explicitly target the current window.
+func launchWTSplit(codexArgs []string, split string, sizePercent int, hudBinary string) error {
+	dirFlag := wtDirFlag(split)
 	sizeStr := fmt.Sprintf("%.2f", float64(sizePercent)/100.0)
 
+	// -w 0 = target the current (most recent) window, not a new one.
 	wtArgs := []string{
+		"-w", "0",
 		"split-pane",
 		dirFlag,
 		"--size", sizeStr,
@@ -61,15 +66,10 @@ func launchWTSplit(codexArgs []string, split string, sizePercent int, hudBinary 
 // launchWTNew opens a new Windows Terminal window with codex + HUD already
 // split. Used when codex-hud is run from outside WT (e.g. plain PowerShell,
 // Git Bash, CMD).
+// Builds the full command line as a string and runs via cmd /c so that the
+// ";" subcommand separator is not escaped by Go's exec.Command.
 func launchWTNew(codexArgs []string, split string, sizePercent int, hudBinary string) error {
-	var dirFlag string
-	switch split {
-	case "right":
-		dirFlag = "-V"
-	default:
-		dirFlag = "-H"
-	}
-
+	dirFlag := wtDirFlag(split)
 	sizeStr := fmt.Sprintf("%.2f", float64(sizePercent)/100.0)
 
 	codexBin, codexCmdArgs := buildCodexCommand(codexArgs)
@@ -78,18 +78,14 @@ func launchWTNew(codexArgs []string, split string, sizePercent int, hudBinary st
 		codexFullCmd += " " + strings.Join(codexCmdArgs, " ")
 	}
 
-	// wt new-tab <codex> ; split-pane <flags> <hud>
-	// The ";" separator tells wt to chain subcommands in one window.
-	wtArgs := []string{
-		"new-tab", codexFullCmd,
-		";",
-		"split-pane", dirFlag, "--size", sizeStr,
-		hudBinary, "--watch", "--fresh",
-	}
+	// Build the full wt command line as a single string.
+	// cmd /c ensures the ";" separator is passed literally to wt.exe.
+	cmdLine := fmt.Sprintf("wt new-tab %s ; split-pane %s --size %s %s --watch --fresh",
+		codexFullCmd, dirFlag, sizeStr, hudBinary)
 
 	fmt.Println("Launching codex + HUD in Windows Terminal...")
 
-	cmd := exec.Command("wt", wtArgs...)
+	cmd := exec.Command("cmd", "/c", cmdLine)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
