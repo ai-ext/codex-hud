@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ds/codex-hud/internal/parser"
 	"github.com/fsnotify/fsnotify"
@@ -137,10 +138,18 @@ func tailFromReader(f *os.File, reader *bufio.Reader, path string, lines chan<- 
 		return fmt.Errorf("watch %s: %w", path, err)
 	}
 
+	// Poll as fallback in case fsnotify misses Write events (common on Windows).
+	pollTicker := time.NewTicker(500 * time.Millisecond)
+	defer pollTicker.Stop()
+
 	for {
 		select {
 		case <-stop:
 			return nil
+		case <-pollTicker.C:
+			if err := readLines(reader, lines); err != nil {
+				return err
+			}
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return nil
@@ -262,6 +271,8 @@ func scanFileForRateLimits(path string) *parser.RateLimits {
 // WatchForNewSession watches sessionsDir recursively via fsnotify. When a new
 // .jsonl file is created, it starts TailFile on it. It also watches for new
 // subdirectories (Codex creates date-based dirs). It blocks until stop is closed.
+// A periodic poll runs as a fallback in case fsnotify misses events (common on
+// Windows).
 func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan struct{}) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -286,6 +297,24 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 	// Track the stop channel for the currently tailed file so we can stop
 	// tailing when a newer session appears.
 	var currentStop chan struct{}
+	var currentFile string
+
+	// startTailing switches to tailing a new session file.
+	startTailing := func(path string) {
+		if path == currentFile {
+			return // already tailing this file
+		}
+		if currentStop != nil {
+			close(currentStop)
+		}
+		currentStop = make(chan struct{})
+		currentFile = path
+		go TailFile(path, lines, currentStop)
+	}
+
+	// Periodic poll as fallback for missed fsnotify events (especially on Windows).
+	pollTicker := time.NewTicker(1 * time.Second)
+	defer pollTicker.Stop()
 
 	for {
 		select {
@@ -294,6 +323,12 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 				close(currentStop)
 			}
 			return
+		case <-pollTicker.C:
+			// Poll for the latest .jsonl file in case fsnotify missed it.
+			latest, err := FindLatestSession(sessionsDir)
+			if err == nil && latest != "" {
+				startTailing(latest)
+			}
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return
@@ -311,23 +346,13 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 					entries, _ := os.ReadDir(event.Name)
 					for _, e := range entries {
 						if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
-							path := filepath.Join(event.Name, e.Name())
-							if currentStop != nil {
-								close(currentStop)
-							}
-							currentStop = make(chan struct{})
-							go TailFile(path, lines, currentStop)
+							startTailing(filepath.Join(event.Name, e.Name()))
 						}
 					}
 					continue
 				}
 				if strings.HasSuffix(event.Name, ".jsonl") {
-					// Stop tailing the previous session if any.
-					if currentStop != nil {
-						close(currentStop)
-					}
-					currentStop = make(chan struct{})
-					go TailFile(event.Name, lines, currentStop)
+					startTailing(event.Name)
 				}
 			}
 		case _, ok := <-watcher.Errors:
