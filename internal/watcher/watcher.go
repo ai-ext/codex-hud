@@ -139,7 +139,7 @@ func tailFromReader(f *os.File, reader *bufio.Reader, path string, lines chan<- 
 	}
 
 	// Poll as fallback in case fsnotify misses Write events (common on Windows).
-	pollTicker := time.NewTicker(500 * time.Millisecond)
+	pollTicker := time.NewTicker(200 * time.Millisecond)
 	defer pollTicker.Stop()
 
 	for {
@@ -313,7 +313,7 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 	}
 
 	// Periodic poll as fallback for missed fsnotify events (especially on Windows).
-	pollTicker := time.NewTicker(1 * time.Second)
+	pollTicker := time.NewTicker(300 * time.Millisecond)
 	defer pollTicker.Stop()
 
 	for {
