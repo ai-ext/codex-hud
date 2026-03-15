@@ -64,16 +64,13 @@ sudo mv codex-hud /usr/local/bin/
 ```
 
 **Windows:**
-1. [codex-hud-windows-amd64.exe](https://github.com/ai-ext/codex-hud/releases/latest/download/codex-hud-windows-amd64.exe) 다운로드
-2. `scripts/install.bat` 또는 `install.ps1`과 같은 폴더에 넣고 실행:
-```powershell
-# PowerShell
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
-# 또는 CMD
-scripts\install.bat
+[install.ps1](https://github.com/ai-ext/codex-hud/releases/latest/download/install.ps1)을 다운로드하고 실행하면 자동으로 exe 다운로드 + PATH 등록됩니다:
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
-자동으로 `%LOCALAPPDATA%\codex-hud\`에 복사하고 PATH에 추가됩니다.
+
+> **SmartScreen 경고**: 처음 `codex-hud`를 실행하면 "Windows가 PC를 보호했습니다" 파란 팝업이 뜰 수 있습니다. 코드 서명이 없는 오픈소스 바이너리에 나타나는 정상적인 경고입니다. **"추가 정보" → "실행"**을 클릭하면 이후엔 뜨지 않습니다.
 
 ### 소스에서 빌드 (Go 1.21+ 필요)
 
