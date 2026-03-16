@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ds/codex-hud/internal/config"
 	"github.com/ds/codex-hud/internal/git"
@@ -22,6 +23,8 @@ type Model struct {
 	Height    int
 	Err       error
 	Waiting   bool
+	Viewport  viewport.Model
+	vpReady   bool
 }
 
 // LineMsg is sent when a new JSONL line is read from the session file.
@@ -54,9 +57,9 @@ func NewModel(cfg *config.Config, lines <-chan string) Model {
 }
 
 // Init returns the initial commands: wait for a line, start the tick loop,
-// and fetch live usage data.
+// fetch live usage data, and enable mouse for scroll support.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(waitForLine(m.Lines), tickCmd(), fetchUsage())
+	return tea.Batch(waitForLine(m.Lines), tickCmd(), fetchUsage(), tea.EnableMouseCellMotion)
 }
 
 // waitForLine returns a Cmd that blocks until a line arrives on the channel,

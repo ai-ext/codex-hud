@@ -22,27 +22,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Manual git refresh
 			return m, fetchGitStatus(m.State.CWD)
 		}
+		// Pass to viewport for scroll handling (j/k/up/down/pgup/pgdn).
+		var cmd tea.Cmd
+		m.Viewport, cmd = m.Viewport.Update(msg)
+		return m, cmd
+
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.Viewport, cmd = m.Viewport.Update(msg)
+		return m, cmd
 
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
+		m.syncViewport()
 		return m, nil
 
 	case LineMsg:
 		m.Waiting = false
 		ProcessLine(m.State, string(msg))
+		m.syncViewport()
 		return m, tea.Batch(
 			waitForLine(m.Lines),
 			fetchGitStatus(m.State.CWD),
 		)
 
 	case TickMsg:
+		m.syncViewport()
 		return m, tickCmd()
 
 	case GitStatusMsg:
 		if msg.Status != nil {
 			m.GitStatus = msg.Status
 		}
+		m.syncViewport()
 		return m, nil
 
 	case UsageMsg:
@@ -60,6 +73,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.State.SecondaryWindowMinutes = rl.Secondary.LimitWindowSecs / 60
 			}
 		}
+		m.syncViewport()
 		// Re-fetch usage every 30 seconds.
 		return m, tea.Tick(30*time.Second, func(t time.Time) tea.Msg {
 			return usageRefreshMsg{}
@@ -70,4 +84,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// syncViewport initializes the viewport on first call, then updates its
+// dimensions and content to match the current state.
+func (m *Model) syncViewport() {
+	// Viewport occupies the area inside the outer border.
+	// OuterStyle: border(1 each) + padding(2 left/right, 1 top/bottom)
+	vpWidth := m.Width - 6
+	vpHeight := m.Height - 4
+	if vpWidth < 10 {
+		vpWidth = 10
+	}
+	if vpHeight < 1 {
+		vpHeight = 1
+	}
+
+	if !m.vpReady {
+		m.Viewport = NewViewport(vpWidth, vpHeight)
+		m.vpReady = true
+	} else {
+		m.Viewport.Width = vpWidth
+		m.Viewport.Height = vpHeight
+	}
+
+	body := m.renderBody()
+	m.Viewport.SetContent(body)
 }
