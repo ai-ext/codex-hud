@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,19 @@ import (
 	"github.com/ds/codex-hud/internal/parser"
 	"github.com/fsnotify/fsnotify"
 )
+
+// debug controls verbose logging for troubleshooting session detection.
+// Set via SetDebug.
+var debug bool
+
+// SetDebug enables or disables verbose debug logging for the watcher package.
+func SetDebug(enabled bool) { debug = enabled }
+
+func debugf(format string, args ...interface{}) {
+	if debug {
+		log.Printf("[watcher] "+format, args...)
+	}
+}
 
 // FindLatestSession walks sessionsDir recursively, finds all .jsonl files,
 // and returns the path of the most recently modified one.
@@ -89,6 +103,7 @@ func ReadExistingLines(path string) ([]string, error) {
 // fsnotify and sends new lines as they appear. TailFile blocks until the stop
 // channel is closed, then returns nil. It uses bufio.Reader for streaming reads.
 func TailFile(path string, lines chan<- string, stop <-chan struct{}) error {
+	debugf("TailFile: opening %s", path)
 	f, err := os.Open(path)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
@@ -98,9 +113,11 @@ func TailFile(path string, lines chan<- string, stop <-chan struct{}) error {
 	reader := bufio.NewReader(f)
 
 	// Read all existing content line by line.
-	if err := readLines(reader, lines); err != nil {
+	var partial string
+	if err := readLines(reader, lines, &partial); err != nil {
 		return err
 	}
+	debugf("TailFile: initial read done for %s (partial=%q)", path, partial)
 
 	return tailFromReader(f, reader, path, lines, stop)
 }
@@ -127,60 +144,73 @@ func TailFileFromEnd(path string, lines chan<- string, stop <-chan struct{}) err
 // tailFromReader watches the file for new appends and sends new lines through
 // the channel. Shared implementation for TailFile and TailFileFromEnd.
 func tailFromReader(f *os.File, reader *bufio.Reader, path string, lines chan<- string, stop <-chan struct{}) error {
-	// Set up fsnotify watcher for new appends.
+	// Set up fsnotify watcher for new appends (best-effort — poll is the
+	// fallback for platforms where fsnotify is unreliable).
+	var fsEvents <-chan fsnotify.Event
+	var fsErrors <-chan error
 	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("create watcher: %w", err)
-	}
-	defer watcher.Close()
-
-	if err := watcher.Add(path); err != nil {
-		return fmt.Errorf("watch %s: %w", path, err)
+	if err == nil {
+		defer watcher.Close()
+		if err := watcher.Add(path); err == nil {
+			fsEvents = watcher.Events
+			fsErrors = watcher.Errors
+		}
 	}
 
 	// Poll as fallback in case fsnotify misses Write events (common on Windows).
 	pollTicker := time.NewTicker(200 * time.Millisecond)
 	defer pollTicker.Stop()
 
+	var partial string
 	for {
 		select {
 		case <-stop:
 			return nil
 		case <-pollTicker.C:
-			if err := readLines(reader, lines); err != nil {
+			if err := readLines(reader, lines, &partial); err != nil {
 				return err
 			}
-		case event, ok := <-watcher.Events:
+		case event, ok := <-fsEvents:
 			if !ok {
-				return nil
+				fsEvents = nil
+				continue
 			}
 			if event.Has(fsnotify.Write) {
-				if err := readLines(reader, lines); err != nil {
+				if err := readLines(reader, lines, &partial); err != nil {
 					return err
 				}
 			}
-		case err, ok := <-watcher.Errors:
+		case _, ok := <-fsErrors:
 			if !ok {
-				return nil
+				fsErrors = nil
+				continue
 			}
-			return fmt.Errorf("watcher error: %w", err)
+			// Non-fatal: fall back to polling.
 		}
 	}
 }
 
 // readLines reads all available complete lines from reader and sends non-empty
-// ones to the lines channel.
-func readLines(reader *bufio.Reader, lines chan<- string) error {
+// ones to the lines channel. Partial lines (without a trailing newline) are
+// stored in *partial so they can be prepended to the next read.
+func readLines(reader *bufio.Reader, lines chan<- string, partial *string) error {
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				// No more data available right now. If we got a partial
-				// line (no trailing newline), ignore it for now; it will
-				// be completed on the next write event.
+				// Partial line (no trailing newline yet). Save it so the
+				// next call can prepend it once more data is available.
+				if line != "" {
+					*partial += line
+				}
 				return nil
 			}
 			return fmt.Errorf("read line: %w", err)
+		}
+		// Prepend any previously buffered partial data.
+		if *partial != "" {
+			line = *partial + line
+			*partial = ""
 		}
 		line = strings.TrimRight(line, "\n\r")
 		if line != "" {
@@ -273,37 +303,54 @@ func scanFileForRateLimits(path string) *parser.RateLimits {
 // subdirectories (Codex creates date-based dirs). It blocks until stop is closed.
 // A periodic poll runs as a fallback in case fsnotify misses events (common on
 // Windows).
-func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan struct{}, minModTime time.Time) {
+//
+// If initialFile is non-empty, WatchForNewSession assumes that file is already
+// being tailed elsewhere and won't start a duplicate TailFile for it. It will
+// still detect NEWER session files (e.g. from /resume).
+func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan struct{}, minModTime time.Time, initialFile ...string) {
+	debugf("WatchForNewSession: dir=%s minModTime=%v initial=%v", sessionsDir, minModTime, initialFile)
+
+	// Set up fsnotify (best-effort — poll always runs as fallback).
+	var fsEvents <-chan fsnotify.Event
+	var fsErrors <-chan error
 	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return
-	}
-	defer watcher.Close()
-
-	// Add the root sessions directory.
-	_ = watcher.Add(sessionsDir)
-
-	// Also add any existing subdirectories.
-	_ = filepath.WalkDir(sessionsDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
+	if err == nil {
+		defer watcher.Close()
+		_ = watcher.Add(sessionsDir)
+		_ = filepath.WalkDir(sessionsDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				_ = watcher.Add(path)
+			}
 			return nil
-		}
-		if d.IsDir() {
-			_ = watcher.Add(path)
-		}
-		return nil
-	})
+		})
+		fsEvents = watcher.Events
+		fsErrors = watcher.Errors
+		debugf("WatchForNewSession: fsnotify initialized")
+	} else {
+		debugf("WatchForNewSession: fsnotify failed (%v), using poll-only", err)
+	}
 
 	// Track the stop channel for the currently tailed file so we can stop
 	// tailing when a newer session appears.
 	var currentStop chan struct{}
 	var currentFile string
 
+	// If an initial file was provided, record it so we don't start a
+	// duplicate TailFile.
+	if len(initialFile) > 0 && initialFile[0] != "" {
+		currentFile = initialFile[0]
+		debugf("WatchForNewSession: initial file set to %s", currentFile)
+	}
+
 	// startTailing switches to tailing a new session file.
 	startTailing := func(path string) {
 		if path == currentFile {
 			return // already tailing this file
 		}
+		debugf("WatchForNewSession: switching from %q to %s", currentFile, path)
 		if currentStop != nil {
 			close(currentStop)
 		}
@@ -338,9 +385,10 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 				}
 				startTailing(latest)
 			}
-		case event, ok := <-watcher.Events:
+		case event, ok := <-fsEvents:
 			if !ok {
-				return
+				fsEvents = nil
+				continue
 			}
 			if event.Has(fsnotify.Create) {
 				info, err := os.Stat(event.Name)
@@ -349,7 +397,9 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 				}
 				if info.IsDir() {
 					// New subdirectory: start watching it too.
-					_ = watcher.Add(event.Name)
+					if watcher != nil {
+						_ = watcher.Add(event.Name)
+					}
 					// Scan for .jsonl files that may have been created
 					// between the directory creation and our watcher.Add.
 					entries, _ := os.ReadDir(event.Name)
@@ -361,13 +411,16 @@ func WatchForNewSession(sessionsDir string, lines chan<- string, stop <-chan str
 					continue
 				}
 				if strings.HasSuffix(event.Name, ".jsonl") {
+					debugf("WatchForNewSession: fsnotify Create %s", event.Name)
 					startTailing(event.Name)
 				}
 			}
-		case _, ok := <-watcher.Errors:
+		case _, ok := <-fsErrors:
 			if !ok {
-				return
+				fsErrors = nil
+				continue
 			}
+			// Non-fatal: polling continues as fallback.
 		}
 	}
 }

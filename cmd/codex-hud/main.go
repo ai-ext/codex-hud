@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var version = "0.4.0"
+var version = "0.4.1"
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -33,6 +33,7 @@ Use --watch to run the HUD panel only (monitor an existing session).`,
 	rootCmd.Flags().Bool("fresh", false, "Skip pre-loading old session data (used by wrapper mode)")
 	rootCmd.Flags().String("split", "bottom", "Split direction: bottom or right")
 	rootCmd.Flags().Int("size", 40, "HUD pane size in percent (default 40)")
+	rootCmd.Flags().Bool("debug", false, "Enable verbose debug logging to stderr")
 	rootCmd.Version = version
 
 	if err := rootCmd.Execute(); err != nil {
@@ -70,6 +71,9 @@ func runWrapper(cmd *cobra.Command, args []string) error {
 }
 
 func runWatch(cmd *cobra.Command, args []string) error {
+	debugMode, _ := cmd.Flags().GetBool("debug")
+	watcher.SetDebug(debugMode)
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("cannot find home directory: %w", err)
@@ -123,16 +127,18 @@ func runWatch(cmd *cobra.Command, args []string) error {
 
 	// Always watch for new sessions so the HUD automatically switches when
 	// codex starts a new session (e.g. in wrapper mode where codex launches
-	// slightly after the HUD). ApplySessionMeta resets per-session state
-	// when the session ID changes.
+	// slightly after the HUD, or when using /resume). ApplySessionMeta
+	// resets per-session state when the session ID changes.
 	//
 	// In fresh mode, pass the current time so the poll ignores old sessions.
+	// Pass the initial file path so WatchForNewSession won't start a
+	// duplicate TailFile for the same file.
 	var minModTime time.Time
 	if fresh {
 		minModTime = time.Now()
 	}
 	go func() {
-		watcher.WatchForNewSession(sessionsDir, lines, stop, minModTime)
+		watcher.WatchForNewSession(sessionsDir, lines, stop, minModTime, filePath)
 	}()
 
 	// --- Phase 3: Start TUI with pre-populated state ---
